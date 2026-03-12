@@ -329,8 +329,33 @@ header {
   letter-spacing: 0.08em; transition: all 0.14s;
 }
 .refresh-btn:hover { border-color: var(--amber-dim); color: var(--amber); border-style: solid; }
-.refresh-btn.spinning { animation: spin 0.7s linear infinite; }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.refresh-btn.spinning::after {
+  content: none;
+}
+.refresh-btn .wave-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.refresh-btn .wave-dots span {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--amber);
+  animation: wave-dot 1.1s ease-in-out infinite;
+  opacity: 0.3;
+}
+.refresh-btn .wave-dots span:nth-child(1) { animation-delay: 0s; }
+.refresh-btn .wave-dots span:nth-child(2) { animation-delay: 0.15s; }
+.refresh-btn .wave-dots span:nth-child(3) { animation-delay: 0.30s; }
+.refresh-btn .wave-dots span:nth-child(4) { animation-delay: 0.45s; }
+.refresh-btn .wave-dots span:nth-child(5) { animation-delay: 0.60s; }
+@keyframes wave-dot {
+  0%, 100% { opacity: 0.2; transform: translateY(0); }
+  40%       { opacity: 1;   transform: translateY(-3px); }
+}
 #new-filter-chip.on { background: var(--amber-bg); border-color: var(--amber); border-style: solid; color: var(--amber); }
 
 /* ── MY LIST TAB ── */
@@ -1028,10 +1053,49 @@ function runPicker() {
 
 // ══════════════════════════════════════════════════════════════ API PIPELINE
 
-// Portland bounding box: south, west, north, east
-const PDX_BBOX = '45.432,-122.836,45.653,-122.472';
+// Portland urban core bounding box:
+// West:  -122.710 (eastern edge of Pittock Acres Park / Forest Park)
+// East:  -122.578 (roughly NE/SE 90th Ave)
+// South: 45.462  (Sellwood / Woodstock)
+// North: 45.595  (Columbia Slough / St. Johns bridge area)
+const PDX_BBOX = '45.462,-122.710,45.595,-122.578';
 
-const OSM_TYPE_MAP = {
+// Fast food / chain brands to exclude
+const FAST_FOOD_BRANDS = new Set([
+  'mcdonalds','mcdonald\'s','burger king','wendy\'s','wendys','taco bell',
+  'subway','domino\'s','dominos','pizza hut','kfc','popeyes','popeye\'s',
+  'chick-fil-a','chipotle','panda express','jack in the box','del taco',
+  'dairy queen','sonic','arby\'s','arbys','little caesars','papa john\'s',
+  'papa johns','five guys','shake shack','in-n-out','whataburger',
+  'carl\'s jr','carls jr','hardee\'s','hardees','wingstop','raising cane\'s',
+  'raising canes','el pollo loco','church\'s chicken','churches chicken',
+  'starbucks','dunkin','dunkin donuts','tim hortons','panera','panera bread',
+  'panda express','noodles & company','noodles and company','qdoba',
+  'moe\'s','moes','jersey mike\'s','jersey mikes','jimmy john\'s','jimmy johns',
+  'firehouse subs','potbelly','quiznos','schlotzsky\'s',
+]);
+
+function isChain(el) {
+  const t = el.tags || {};
+  const brand = (t.brand || '').toLowerCase().replace(/[^a-z0-9\s]/g,'');
+  const name  = (t.name  || '').toLowerCase().replace(/[^a-z0-9\s]/g,'');
+  return FAST_FOOD_BRANDS.has(brand) || FAST_FOOD_BRANDS.has(name);
+}
+
+const WAVE = `<span class="wave-dots"><span></span><span></span><span></span><span></span><span></span></span>`;
+
+function btnBusy(btn, label) {
+  btn.classList.add('spinning');
+  btn.disabled = true;
+  btn.innerHTML = label + WAVE;
+}
+
+function btnDone(btn, label, resetMs = 3000) {
+  btn.classList.remove('spinning');
+  btn.disabled = false;
+  btn.innerHTML = label;
+  setTimeout(() => { btn.innerHTML = '↻ refresh'; }, resetMs);
+}
   restaurant: 'restaurant',
   bar: 'bar',
   pub: 'bar',
@@ -1044,7 +1108,14 @@ const OSM_TYPE_MAP = {
 function osmTagsToVenue(el, idOffset) {
   const t = el.tags || {};
   const name = t.name;
-  if (!name) return null;
+
+  // Quality gates
+  if (!name || name.length < 4) return null;
+  if (isChain(el)) return null;
+
+  // Require at least one quality signal: cuisine, website, opening_hours, or phone
+  const hasSignal = t.cuisine || t.website || t.opening_hours || t.phone || t['addr:street'];
+  if (!hasSignal) return null;
 
   // Determine type
   let type = 'restaurant';
@@ -1088,11 +1159,11 @@ function osmTagsToVenue(el, idOffset) {
 
 async function fetchOverpass() {
   const query = `
-    [out:json][timeout:25];
+    [out:json][timeout:30];
     (
-      node["amenity"~"restaurant|bar|pub|cafe|biergarten"]["name"](${PDX_BBOX});
+      node["amenity"~"^(restaurant|bar|pub|cafe|biergarten)$"]["name"](${PDX_BBOX});
       node["craft"="brewery"]["name"](${PDX_BBOX});
-      way["amenity"~"restaurant|bar|pub|cafe|biergarten"]["name"](${PDX_BBOX});
+      way["amenity"~"^(restaurant|bar|pub|cafe|biergarten)$"]["name"](${PDX_BBOX});
       way["craft"="brewery"]["name"](${PDX_BBOX});
     );
     out center tags;
@@ -1115,7 +1186,7 @@ async function enrichNeighborhoods(newVenues) {
       try {
         const r = await fetch(
           `https://nominatim.openstreetmap.org/reverse?lat=${v.lat}&lon=${v.lng}&zoom=14&format=json`,
-          { headers: { 'Accept-Language': 'en' } }
+          { headers: { 'Accept-Language': 'en', 'User-Agent': 'the-commons/1.0 (stoult.com)' } }
         );
         const j = await r.json();
         const a = j.address || {};
@@ -1152,38 +1223,32 @@ async function enrichWikipedia(newVenues) {
 
 async function checkForNewVenues() {
   const btn = document.getElementById('refresh-btn');
-  btn.classList.add('spinning');
-  btn.disabled = true;
-  btn.textContent = '↻ fetching…';
+  btnBusy(btn, '↻ fetching');
 
   try {
     // ── Stage 1: Overpass
-    btn.textContent = '↻ overpass…';
+    btnBusy(btn, '↻ overpass');
     const elements = await fetchOverpass();
 
-    // Deduplicate against existing venues by OSM id or name
     const existingOsmIds = new Set(venues.filter(v => v.osmId).map(v => v.osmId));
     const existingNames  = new Set(venues.map(v => v.name.toLowerCase()));
-    const ID_OFFSET = 100000; // avoid collisions with seed ids
+    const ID_OFFSET = 100000;
 
     const newVenues = elements
       .map(el => osmTagsToVenue(el, ID_OFFSET))
       .filter(v => v && !existingOsmIds.has(v.osmId) && !existingNames.has(v.name.toLowerCase()));
 
     if (newVenues.length === 0) {
-      btn.textContent = '↻ up to date';
-      btn.classList.remove('spinning');
-      btn.disabled = false;
-      setTimeout(() => { btn.textContent = '↻ refresh'; }, 2800);
+      btnDone(btn, '↻ up to date', 2800);
       return;
     }
 
-    // ── Stage 2: Nominatim neighborhoods (rate-limited)
-    btn.textContent = `↻ locating ${newVenues.length}…`;
+    // ── Stage 2: Nominatim neighborhoods
+    btnBusy(btn, `↻ locating ${newVenues.length}`);
     await enrichNeighborhoods(newVenues);
 
-    // ── Stage 3: Wikipedia descriptions (best-effort)
-    btn.textContent = '↻ enriching…';
+    // ── Stage 3: Wikipedia
+    btnBusy(btn, '↻ enriching');
     await enrichWikipedia(newVenues);
 
     // ── Merge & save
@@ -1191,17 +1256,11 @@ async function checkForNewVenues() {
     saveVenues(venues);
     renderAll();
 
-    btn.textContent = `↻ +${newVenues.length} added`;
-    btn.classList.remove('spinning');
-    btn.disabled = false;
-    setTimeout(() => { btn.textContent = '↻ refresh'; }, 3500);
+    btnDone(btn, `↻ +${newVenues.length} added`, 3500);
 
   } catch(err) {
     console.error('Refresh failed:', err);
-    btn.textContent = '↻ error — retry?';
-    btn.classList.remove('spinning');
-    btn.disabled = false;
-    setTimeout(() => { btn.textContent = '↻ refresh'; }, 3000);
+    btnDone(btn, '↻ error — retry?', 3000);
   }
 }
 
