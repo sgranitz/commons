@@ -857,6 +857,7 @@ function renderMapMarkers() {
       });
       marker.on('mouseover', () => highlightVenue(v.id));
       marker.on('mouseout',  () => unhighlightVenue());
+      marker.on('click',     () => scrollToCard(v.id));
       leafletMarkers[v.id] = marker;
     }
   });
@@ -879,7 +880,12 @@ function highlightVenue(id) {
     leafletMarkers[id].setZIndexOffset(1000);
   }
   const card = document.querySelector(`.venue-card[data-id="${id}"]`);
-  if (card) { card.classList.add('highlighted'); card.scrollIntoView({ behavior:'smooth', block:'nearest' }); }
+  if (card) { card.classList.add('highlighted'); }
+}
+
+function scrollToCard(id) {
+  const card = document.querySelector(`.venue-card[data-id="${id}"]`);
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function unhighlightVenue() {
