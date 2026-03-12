@@ -1106,14 +1106,6 @@ function btnDone(btn, label, resetMs = 3000) {
   btn.innerHTML = label;
   setTimeout(() => { btn.innerHTML = '↻ refresh'; }, resetMs);
 }
-  restaurant: 'restaurant',
-  bar: 'bar',
-  pub: 'bar',
-  brewery: 'brewery',
-  biergarten: 'bar',
-  cafe: 'restaurant',
-  fast_food: 'restaurant',
-};
 
 function osmTagsToVenue(el, idOffset) {
   const t = el.tags || {};
