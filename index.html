@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>the commons · portland</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root {
+  --bg:       #1a1612;
+  --bg2:      #221e19;
+  --card:     #2a2420;
+  --card2:    #322c26;
+  --border:   #3d3630;
+  --border2:  #4a433b;
+  --amber:    #c8a96e;
+  --amber-dim:#9a7e4f;
+  --amber-bg: rgba(200,169,110,0.08);
+  --cream:    #e8dcc8;
+  --muted:    #8a7e6e;
+  --faint:    #5a5040;
+  --red:      #c87060;
+  --blue:     #6090b0;
+  --green:    #70a880;
+  --r-hex:    #8b3a2a;
+  --b-hex:    #2a5a7a;
+  --g-hex:    #3a6645;
+  --radius:   6px;
+  --mono:     'DM Mono', monospace;
+  --serif:    'Playfair Display', Georgia, serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--cream);
+  font-family: var(--mono);
+  font-size: 12px;
+  min-height: 100vh;
+  padding-bottom: 48px;
+}
+
+/* ── HEADER ── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+}
+.wordmark {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--cream);
+  letter-spacing: -0.02em;
+}
+.wordmark em { font-style: italic; color: var(--amber); }
+.wordmark span {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+/* ── TAB NAV (pill style matching ledger main-nav) ── */
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+  margin: 14px 16px 0;
+}
+.tab {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 9px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.18s;
+  text-align: center;
+}
+.tab.active {
+  background: var(--card2);
+  color: var(--cream);
+  border: 1px solid var(--border2);
+}
+.tab:hover:not(.active) { color: var(--cream); }
+
+/* ── STICKY NAV WRAPPER ── */
+.nav-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 500;
+  background: var(--bg2);
+  padding-bottom: 1px;
+}
+/* only show filter bar when on explore tab */
+.nav-wrapper .filter-bar { display: flex; }
+
+/* ── FILTER BAR ── */
+.filter-bar {
+  display: flex;
+  gap: 5px;
+  padding: 10px 16px 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  border-top: 1px solid var(--border);
+}
+.filter-sep { width: 1px; height: 14px; background: var(--border2); margin: 0 4px; }
+.filter-label {
+  font-size: 9px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--faint); margin-right: 1px;
+}
+.chip {
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px dashed var(--border2);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.12s;
+  color: var(--muted);
+  background: transparent;
+  font-family: var(--mono);
+}
+.chip:hover { border-color: var(--amber-dim); color: var(--cream); border-style: solid; }
+.chip.on     { background: var(--amber);  border-color: var(--amber);  border-style: solid; color: var(--bg); }
+.chip.on-r   { background: var(--r-hex);  border-color: var(--r-hex);  border-style: solid; color: #fff; }
+.chip.on-b   { background: var(--b-hex);  border-color: var(--b-hex);  border-style: solid; color: #fff; }
+.chip.on-g   { background: var(--g-hex);  border-color: var(--g-hex);  border-style: solid; color: #fff; }
+
+/* ── MAP ── */
+#map {
+  height: 400px;
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+}
+
+#map .leaflet-tile-pane {
+  filter: grayscale(1) brightness(0.45) sepia(0.18);
+}
+
+.leaflet-popup-content-wrapper {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+  padding: 0;
+}
+.leaflet-popup-content {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--cream);
+  min-width: 190px;
+}
+.leaflet-popup-tip-container { display: none; }
+.leaflet-popup-close-button {
+  font-size: 18px !important;
+  color: var(--muted) !important;
+  right: 8px !important;
+  top: 6px !important;
+}
+.popup-inner { padding: 14px 16px 12px; }
+.popup-name {
+  font-family: var(--serif);
+  font-size: 15px;
+  color: var(--cream);
+  margin-bottom: 3px;
+  padding-right: 16px;
+}
+.popup-meta {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.popup-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.popup-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+.popup-tag {
+  font-size: 9px; padding: 2px 6px; border-radius: 2px;
+  background: var(--bg2); color: var(--muted); border: 1px solid var(--border);
+}
+.popup-actions {
+  display: flex; gap: 6px;
+  border-top: 1px solid var(--border);
+  padding: 8px 16px;
+}
+.popup-btn {
+  flex: 1; padding: 6px 4px; text-align: center;
+  border-radius: 3px; font-size: 9px;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer; border: 1px dashed var(--border2);
+  background: transparent; color: var(--muted);
+  font-family: var(--mono); transition: all 0.12s;
+}
+.popup-btn:hover { background: var(--card2); color: var(--cream); }
+.popup-btn.active-want  { border-color: var(--amber);  color: var(--amber);  border-style: solid; background: var(--amber-bg); }
+.popup-btn.active-visit { border-color: var(--green);  color: var(--green);  border-style: solid; background: rgba(112,168,128,0.08); }
+
+/* map legend */
+.map-legend {
+  position: absolute;
+  bottom: 24px; right: 10px;
+  z-index: 450;
+  background: rgba(42,36,32,0.92);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 8px 11px;
+  display: flex; flex-direction: column; gap: 5px;
+  pointer-events: none;
+}
+.legend-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 9px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted);
+}
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.25); }
+
+.map-count {
+  position: absolute;
+  top: 10px; left: 10px;
+  z-index: 450;
+  background: rgba(42,36,32,0.92);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 5px 9px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  pointer-events: none;
+}
+.map-wrap { position: relative; }
+
+/* ── CARDS ── */
+.cards-section { padding: 16px 16px 32px; }
+.cards-header {
+  display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 12px;
+}
+.cards-title { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
+.sort-select {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--muted); font-family: var(--mono);
+  font-size: 10px; padding: 5px 9px; cursor: pointer; outline: none;
+}
+.sort-select:focus { border-color: var(--amber); }
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+.venue-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 13px 14px;
+  cursor: pointer; transition: border-color 0.14s, box-shadow 0.14s;
+}
+.venue-card:hover, .venue-card.highlighted {
+  border-color: var(--amber-dim);
+  box-shadow: 0 2px 14px rgba(0,0,0,0.3);
+}
+.card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 3px; }
+.card-name { font-family: var(--serif); font-size: 14px; color: var(--cream); flex: 1; line-height: 1.3; }
+.card-price { font-size: 10px; color: var(--muted); margin-left: 8px; flex-shrink: 0; }
+.card-sub {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted); margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.card-sub-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.card-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 9px; }
+.card-tag {
+  font-size: 9px; padding: 2px 6px; border-radius: 2px;
+  background: var(--bg2); color: var(--faint);
+  border: 1px solid var(--border); letter-spacing: 0.05em;
+}
+.card-actions {
+  display: flex; gap: 5px; margin-top: 7px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.action-btn {
+  flex: 1; padding: 6px; text-align: center;
+  border-radius: 4px; font-size: 9px;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer; border: 1px dashed var(--border2);
+  background: transparent; color: var(--muted);
+  font-family: var(--mono); transition: all 0.12s;
+}
+.action-btn:hover { background: var(--card2); color: var(--cream); border-style: solid; }
+.action-btn.want-active  { border-color: var(--amber);  color: var(--amber);  border-style: solid; background: var(--amber-bg); }
+.action-btn.visit-active { border-color: var(--green);  color: var(--green);  border-style: solid; background: rgba(112,168,128,0.08); }
+.empty-state {
+  grid-column: 1/-1; text-align: center;
+  padding: 40px; color: var(--faint); font-size: 11px; letter-spacing: 0.06em;
+}
+.new-badge {
+  display: inline-block;
+  font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase;
+  background: var(--amber-bg); border: 1px solid var(--amber-dim); color: var(--amber);
+  padding: 2px 5px; border-radius: 3px;
+  vertical-align: middle; margin-left: 5px;
+  font-family: var(--mono);
+}
+.refresh-btn {
+  background: transparent; border: 1px dashed var(--border2);
+  border-radius: var(--radius); color: var(--muted);
+  font-family: var(--mono); font-size: 10px;
+  padding: 5px 10px; cursor: pointer;
+  letter-spacing: 0.08em; transition: all 0.14s;
+}
+.refresh-btn:hover { border-color: var(--amber-dim); color: var(--amber); border-style: solid; }
+.refresh-btn.spinning { animation: spin 0.7s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+#new-filter-chip.on { background: var(--amber-bg); border-color: var(--amber); border-style: solid; color: var(--amber); }
+
+/* ── MY LIST TAB ── */
+#tab-list { padding: 16px 16px 32px; }
+.list-controls {
+  display: flex; gap: 8px; margin-bottom: 16px;
+  flex-wrap: wrap; align-items: center;
+}
+.search-input {
+  background: var(--bg2); border: 1px dashed var(--border2);
+  border-radius: var(--radius); color: var(--cream);
+  font-family: var(--mono); font-size: 12px;
+  padding: 8px 11px; outline: none;
+  transition: border-color 0.14s; width: 220px;
+}
+.search-input:focus { border-color: var(--amber); border-style: solid; }
+.search-input::placeholder { color: var(--faint); }
+.list-section-label {
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 10px; margin-top: 22px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+.list-section-label:first-child { margin-top: 0; }
+.list-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 13px; background: var(--card);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  margin-bottom: 5px; cursor: pointer; transition: border-color 0.12s;
+}
+.list-row:hover { border-color: var(--border2); }
+.list-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.list-name { font-family: var(--serif); font-size: 14px; flex: 1; color: var(--cream); }
+.list-meta { font-size: 10px; color: var(--muted); }
+.list-price { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+.list-remove {
+  font-size: 17px; color: var(--faint); cursor: pointer;
+  padding: 0 3px; border: none; background: none;
+  line-height: 1; transition: color 0.12s;
+}
+.list-remove:hover { color: var(--red); }
+
+/* ── PICKER ── */
+.picker-section {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; margin-bottom: 0;
+  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+  border-bottom: none;
+}
+.picker-label {
+  font-family: var(--serif); font-size: 15px; color: var(--cream); margin-bottom: 12px;
+}
+.picker-sub {
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 10px; margin-top: 14px;
+}
+.crave-grid { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+.crave-chip {
+  padding: 6px 12px; border-radius: 20px; border: 1px dashed var(--border2);
+  font-size: 11px; cursor: pointer; transition: all 0.12s;
+  color: var(--muted); background: transparent;
+  font-family: var(--mono); letter-spacing: 0.04em;
+}
+.crave-chip:hover { border-color: var(--amber-dim); color: var(--cream); border-style: solid; }
+.crave-chip.on { background: var(--amber-bg); border-color: var(--amber); border-style: solid; color: var(--amber); }
+.scope-row { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+.pick-btn {
+  background: var(--amber); color: var(--bg); border: none;
+  border-radius: var(--radius); padding: 12px 20px;
+  font-family: var(--mono); font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  cursor: pointer; transition: background 0.15s; margin-bottom: 14px;
+}
+.pick-btn:hover { background: #d4b87e; }
+.pick-results { display: flex; flex-direction: column; gap: 7px; }
+.pick-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 13px; background: var(--bg2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  cursor: pointer;
+  animation: fadeUp 0.18s ease;
+}
+@keyframes fadeUp { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+.pick-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.pick-name { font-family: var(--serif); font-size: 14px; color: var(--cream); flex:1; }
+.pick-sub { display:block; font-size:10px; color:var(--muted); letter-spacing:0.04em; }
+
+/* ── DETAIL OVERLAY (bottom-sheet style matching parent log) ── */
+.overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.72); z-index: 600;
+  align-items: flex-end; justify-content: center;
+}
+.overlay.open { display: flex; }
+.detail-panel {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 16px 16px 0 0; width: 100%; max-width: 560px;
+  padding: 24px 22px 38px; position: relative; max-height: 88vh;
+  overflow-y: auto; box-shadow: 0 -8px 32px rgba(0,0,0,0.5);
+  animation: slideUp 0.22s cubic-bezier(0.34,1.2,0.64,1);
+}
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }
+.close-btn {
+  position: absolute; top: 14px; right: 16px;
+  background: transparent; border: none;
+  color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1;
+}
+.detail-name { font-family: var(--serif); font-size: 20px; color: var(--cream); margin-bottom: 4px; padding-right: 24px; }
+.detail-type {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--muted); margin-bottom: 16px;
+  display: flex; align-items: center; gap: 7px;
+}
+.detail-type-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.detail-section { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-bottom: 6px; margin-top: 14px; }
+.detail-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+.detail-tag {
+  font-size: 10px; padding: 3px 7px; border-radius: 3px;
+  background: var(--bg2); color: var(--muted);
+  border: 1px solid var(--border); letter-spacing: 0.05em;
+}
+.detail-notes {
+  width: 100%; background: var(--bg2); border: 1px dashed var(--border2);
+  border-radius: var(--radius); color: var(--cream); font-family: var(--mono);
+  font-size: 12px; padding: 9px 11px; outline: none;
+  resize: vertical; min-height: 65px; transition: border-color 0.14s; margin-top: 2px;
+}
+.detail-notes:focus { border-color: var(--amber); border-style: solid; }
+.detail-actions { display: flex; gap: 6px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.det-btn {
+  flex: 1; padding: 8px; text-align: center;
+  border-radius: var(--radius); font-size: 10px;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer; border: 1px dashed var(--border2);
+  background: transparent; color: var(--muted);
+  font-family: var(--mono); transition: all 0.12s;
+}
+.det-btn:hover { background: var(--card2); color: var(--cream); border-style: solid; }
+.det-btn.active-save  { border-color: var(--amber);  color: var(--amber);  border-style: solid; background: var(--amber-bg); }
+.det-btn.active-visit { border-color: var(--green);  color: var(--green);  border-style: solid; background: rgba(112,168,128,0.08); }
+.save-det-btn {
+  background: var(--amber); color: var(--bg); border: none;
+  border-radius: var(--radius); padding: 12px; width: 100%; margin-top: 10px;
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  cursor: pointer; transition: background 0.15s;
+}
+.save-det-btn:hover { background: #d4b87e; }
+</style>
+</head>
+<body>
+
+<div class="nav-wrapper">
+<header>
+  <div class="wordmark">the <em>commons</em><span id="city-label">portland, or</span></div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" id="tab-btn-explore" onclick="switchTab('explore')">explore</button>
+  <button class="tab" id="tab-btn-list" onclick="switchTab('list')">my list</button>
+</div>
+
+  <div class="filter-bar" id="filter-bar">
+    <span class="filter-label">type</span>
+    <div class="chip" data-filter="type" data-val="restaurant" onclick="toggleFilter(this)">restaurants</div>
+    <div class="chip" data-filter="type" data-val="brewery"    onclick="toggleFilter(this)">breweries</div>
+    <div class="chip" data-filter="type" data-val="bar"        onclick="toggleFilter(this)">bars</div>
+    <div class="filter-sep"></div>
+    <span class="filter-label">cuisine</span>
+    <div class="chip" data-filter="tag" data-val="italian"   onclick="toggleFilter(this)">italian</div>
+    <div class="chip" data-filter="tag" data-val="asian"     onclick="toggleFilter(this)">asian</div>
+    <div class="chip" data-filter="tag" data-val="mexican"   onclick="toggleFilter(this)">mexican</div>
+    <div class="chip" data-filter="tag" data-val="pizza"     onclick="toggleFilter(this)">pizza</div>
+    <div class="chip" data-filter="tag" data-val="seafood"   onclick="toggleFilter(this)">seafood</div>
+    <div class="chip" data-filter="tag" data-val="brunch"    onclick="toggleFilter(this)">brunch</div>
+    <div class="chip" data-filter="tag" data-val="cocktails" onclick="toggleFilter(this)">cocktails</div>
+    <div class="chip" data-filter="tag" data-val="beer"      onclick="toggleFilter(this)">beer</div>
+    <div class="filter-sep"></div>
+    <span class="filter-label">price</span>
+    <div class="chip" data-filter="price" data-val="$"   onclick="toggleFilter(this)">$</div>
+    <div class="chip" data-filter="price" data-val="$$"  onclick="toggleFilter(this)">$$</div>
+    <div class="chip" data-filter="price" data-val="$$$" onclick="toggleFilter(this)">$$$</div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ EXPLORE TAB -->
+<div id="tab-explore">
+
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="map-count" id="map-count">36 venues</div>
+    <div class="map-legend">
+      <div class="legend-row"><div class="legend-dot" style="background:#8b3a2a"></div>restaurant</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#2a5a7a"></div>brewery</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#3a6645"></div>bar</div>
+    </div>
+  </div>
+
+  <div class="cards-section">
+    <div class="cards-header">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="cards-title" id="cards-title">all venues</div>
+        <div class="chip" id="new-filter-chip" data-filter="new" data-val="new" onclick="toggleNewFilter(this)" style="padding:3px 8px;font-size:9px;letter-spacing:0.1em">✦ new</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="refresh-btn" onclick="checkForNewVenues()" id="refresh-btn" title="check for new venues">↻ refresh</button>
+        <select class="sort-select" onchange="sortCards(this.value)">
+          <option value="name">sort: name</option>
+          <option value="price-lo">sort: price ↑</option>
+          <option value="price-hi">sort: price ↓</option>
+          <option value="hood">sort: neighborhood</option>
+        </select>
+      </div>
+    </div>
+    <div class="cards-grid" id="cards-grid"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ LIST TAB -->
+<div id="tab-list" style="display:none">
+  <!-- PICKER -->
+  <div class="picker-section">
+    <div class="picker-label">What are you in the mood for?</div>
+    <div class="crave-grid">
+      <div class="crave-chip" onclick="toggleCrave(this,'pizza')">🍕 pizza</div>
+      <div class="crave-chip" onclick="toggleCrave(this,'burger')">🍔 burgers</div>
+      <div class="crave-chip" onclick="toggleCrave(this,'tacos')">🌮 tacos</div>
+      <div class="crave-chip" onclick="toggleCrave(this,'ramen')">🍜 ramen</div>
+      <div class="crave-chip" onclick="toggleCrave(this,'seafood')">🦞 seafood</div>
+      <div class="crave-chip" onclick="toggleCrave(this,'italian')">🍝 italian</div>
+      <div class="crave-chip" onclick="toggleCrave(this,'sushi')">🍣 sushi</div>
+      <div class="crave-chip" onclick="toggleCrave(this,'brunch')">🥞 brunch</div>
+      <div class="crave-chip" onclick="toggleCrave(this,'beer')">🍺 beer</div>
+      <div class="crave-chip" onclick="toggleCrave(this,'cocktails')">🍸 cocktails</div>
+      <div class="crave-chip" onclick="toggleCrave(this,'surprise')">✨ surprise me</div>
+    </div>
+    <div class="picker-sub">from</div>
+    <div class="scope-row">
+      <div class="chip on" id="ps-all"     onclick="setPickScope(this,'all')">my whole list</div>
+      <div class="chip"    id="ps-want"    onclick="setPickScope(this,'want')">haven't been</div>
+      <div class="chip"    id="ps-visited" onclick="setPickScope(this,'visited')">been before</div>
+      <div class="chip"    id="ps-new"     onclick="setPickScope(this,'new')">not on my list</div>
+    </div>
+    <button class="pick-btn" onclick="runPicker()">find me something →</button>
+    <div class="pick-results" id="pick-results"></div>
+  </div>
+
+  <div class="list-controls" style="margin-top:24px">
+    <input class="search-input" type="text" placeholder="search your list…" oninput="renderList(this.value)">
+    <div class="chip on"  id="lf-all"     onclick="setListFilter(this,'all')">all</div>
+    <div class="chip"     id="lf-want"    onclick="setListFilter(this,'want')">want to go</div>
+    <div class="chip"     id="lf-visited" onclick="setListFilter(this,'visited')">visited</div>
+  </div>
+  <div id="list-container"></div>
+</div>
+
+<!-- DETAIL OVERLAY -->
+<div class="overlay" id="overlay" onclick="maybeCloseOverlay(event)">
+  <div class="detail-panel">
+    <button class="close-btn" onclick="closeOverlay()">×</button>
+    <div id="detail-content"></div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════ DATA
+const STORAGE_KEY = 'the-commons-v1';
+const CITY = { name: 'Portland', state: 'OR', label: 'portland, or', lat: 45.528, lng: -122.658 };
+const NEW_DAYS = 14; // venues added within this many days show as "new"
+const NOW = Date.now();
+const DAY = 86400000;
+
+// lat/lng — real Portland coordinates
+// addedAt: timestamp. Last 6 are "newly added" for demo purposes.
+const SEED = [
+  // RESTAURANTS
+  { id:1,  name:"Luce",                      type:"restaurant", hood:"Hosford-Abernethy", price:"$$$", tags:["italian","pasta","wine"],              notes:"Get the tagliatelle.",        lat:45.5122, lng:-122.6538, addedAt: NOW - 90*DAY },
+  { id:2,  name:"Han Oak",                   type:"restaurant", hood:"Inner NE",          price:"$$$", tags:["korean","noodles","asian","dumplings"], notes:"",                            lat:45.5265, lng:-122.6498, addedAt: NOW - 85*DAY },
+  { id:3,  name:"Güero",                     type:"restaurant", hood:"Division",          price:"$$",  tags:["tacos","mexican","al pastor"],          notes:"Cash only. Best tacos in SE.",lat:45.5040, lng:-122.6488, addedAt: NOW - 80*DAY },
+  { id:4,  name:"Scottie's Pizza",           type:"restaurant", hood:"Alberta",           price:"$$",  tags:["pizza","ny-style"],                    notes:"",                            lat:45.5572, lng:-122.6388, addedAt: NOW - 75*DAY },
+  { id:5,  name:"Nong's Khao Man Gai",       type:"restaurant", hood:"Downtown",          price:"$",   tags:["thai","rice","asian"],                  notes:"",                            lat:45.5232, lng:-122.6832, addedAt: NOW - 70*DAY },
+  { id:6,  name:"Ava Gene's",                type:"restaurant", hood:"Inner SE",          price:"$$$", tags:["vegetable","italian","pasta"],          notes:"",                            lat:45.5138, lng:-122.6562, addedAt: NOW - 65*DAY },
+  { id:7,  name:"Kachka",                    type:"restaurant", hood:"Inner SE",          price:"$$$", tags:["russian","dumplings","eastern european"],notes:"Get the pelmeni.",           lat:45.5125, lng:-122.6502, addedAt: NOW - 60*DAY },
+  { id:8,  name:"Poke to the Max",           type:"restaurant", hood:"Downtown",          price:"$",   tags:["poke","hawaiian","asian","seafood"],    notes:"",                            lat:45.5218, lng:-122.6795, addedAt: NOW - 55*DAY },
+  { id:9,  name:"Tusk",                      type:"restaurant", hood:"Pearl",             price:"$$",  tags:["vegetable","brunch","wine"],            notes:"",                            lat:45.5282, lng:-122.6842, addedAt: NOW - 50*DAY },
+  { id:10, name:"Bullard",                   type:"restaurant", hood:"Pearl",             price:"$$",  tags:["bbq","burgers","texas"],                notes:"",                            lat:45.5262, lng:-122.6822, addedAt: NOW - 45*DAY },
+  { id:11, name:"Tasty n Daughters",         type:"restaurant", hood:"Pearl",             price:"$$",  tags:["brunch","breakfast","eggs"],            notes:"Weekend waits.",              lat:45.5295, lng:-122.6858, addedAt: NOW - 40*DAY },
+  { id:12, name:"Ox Restaurant",             type:"restaurant", hood:"Boise",             price:"$$$", tags:["argentinian","steak","wood fire"],      notes:"",                            lat:45.5348, lng:-122.6598, addedAt: NOW - 35*DAY },
+  { id:13, name:"Coquine",                   type:"restaurant", hood:"Mt. Tabor",         price:"$$$", tags:["french","bistro","brunch"],             notes:"",                            lat:45.5122, lng:-122.6232, addedAt: NOW - 30*DAY },
+  { id:14, name:"Pream",                     type:"restaurant", hood:"Alberta",           price:"$$",  tags:["thai","asian","noodles","ramen"],       notes:"",                            lat:45.5582, lng:-122.6408, addedAt: NOW - 25*DAY },
+  { id:15, name:"Güero (Cart)",              type:"restaurant", hood:"Buckman",           price:"$",   tags:["tacos","mexican","fast"],               notes:"",                            lat:45.5168, lng:-122.6538, addedAt: NOW - 20*DAY },
+  { id:16, name:"Afuri",                     type:"restaurant", hood:"Pearl",             price:"$$",  tags:["ramen","japanese","asian","noodles"],   notes:"Yuzu shio ramen.",            lat:45.5252, lng:-122.6808, addedAt: NOW - 60*DAY },
+  { id:17, name:"Kann",                      type:"restaurant", hood:"Downtown",          price:"$$$", tags:["haitian","caribbean","seafood"],        notes:"Gregory Gourdet. Excellent.", lat:45.5198, lng:-122.6778, addedAt: NOW - 55*DAY },
+  { id:18, name:"Oberst",                    type:"restaurant", hood:"Alberta",           price:"$$",  tags:["german","sausage","brunch"],            notes:"",                            lat:45.5562, lng:-122.6368, addedAt: NOW - 50*DAY },
+  { id:19, name:"Pocha PDX",                 type:"restaurant", hood:"Alberta",           price:"$$",  tags:["korean","asian","bbq"],                 notes:"",                            lat:45.5578, lng:-122.6428, addedAt: NOW - 45*DAY },
+  { id:20, name:"Luce Wine Bar",             type:"restaurant", hood:"Pearl",             price:"$$",  tags:["wine","italian","small plates"],        notes:"",                            lat:45.5272, lng:-122.6862, addedAt: NOW - 40*DAY },
+  // BREWERIES
+  { id:21, name:"Great Notion",              type:"brewery",    hood:"NW Portland",       price:"$$",  tags:["hazy ipa","beer","pastry stout"],       notes:"",                            lat:45.5318, lng:-122.6968, addedAt: NOW - 90*DAY },
+  { id:22, name:"Breakside Brewery",         type:"brewery",    hood:"Dekum",             price:"$$",  tags:["ipa","lager","beer","food"],            notes:"",                            lat:45.5638, lng:-122.6538, addedAt: NOW - 70*DAY },
+  { id:23, name:"Culmination Brewing",       type:"brewery",    hood:"Inner NE",          price:"$$",  tags:["ipa","sour","beer"],                    notes:"",                            lat:45.5338, lng:-122.6432, addedAt: NOW - 60*DAY },
+  { id:24, name:"Baerlic Brewing",           type:"brewery",    hood:"Buckman",           price:"$$",  tags:["lager","czech","beer"],                 notes:"",                            lat:45.5168, lng:-122.6572, addedAt: NOW - 50*DAY },
+  { id:25, name:"Ex Novo Brewing",           type:"brewery",    hood:"Eliot",             price:"$$",  tags:["ipa","lager","beer","food"],            notes:"",                            lat:45.5352, lng:-122.6542, addedAt: NOW - 40*DAY },
+  { id:26, name:"Migration Brewing",         type:"brewery",    hood:"Concordia",         price:"$$",  tags:["ipa","lager","beer","food"],            notes:"",                            lat:45.5558, lng:-122.6328, addedAt: NOW - 30*DAY },
+  { id:27, name:"Ruse Brewing",              type:"brewery",    hood:"Cully",             price:"$$",  tags:["hazy ipa","sour","beer"],               notes:"",                            lat:45.5568, lng:-122.6088, addedAt: NOW - 20*DAY },
+  { id:28, name:"Ecliptic Brewing",          type:"brewery",    hood:"Overlook",          price:"$$",  tags:["ipa","stout","beer","food"],            notes:"",                            lat:45.5558, lng:-122.6722, addedAt: NOW - 35*DAY },
+  // BARS
+  { id:29, name:"Pepe Le Moko",              type:"bar",        hood:"Downtown",          price:"$$$", tags:["cocktails","underground","intimate"],   notes:"Subterranean gem.",           lat:45.5228, lng:-122.6808, addedAt: NOW - 90*DAY },
+  { id:30, name:"Hey Love",                  type:"bar",        hood:"Lloyd",             price:"$$",  tags:["tropical","cocktails","hotel bar"],     notes:"",                            lat:45.5278, lng:-122.6582, addedAt: NOW - 80*DAY },
+  { id:31, name:"Multnomah Whiskey Library", type:"bar",        hood:"Pearl",             price:"$$$", tags:["whiskey","spirits","cocktails"],        notes:"Need reservations.",          lat:45.5238, lng:-122.6838, addedAt: NOW - 70*DAY },
+  { id:32, name:"Hale Pele",                 type:"bar",        hood:"Alberta",           price:"$$",  tags:["tiki","cocktails","rum"],               notes:"Best tiki bar in PDX.",       lat:45.5592, lng:-122.6458, addedAt: NOW - 60*DAY },
+  { id:33, name:"Dirty Lettuce",             type:"bar",        hood:"Division",          price:"$",   tags:["dive","beer","cocktails"],              notes:"",                            lat:45.5042, lng:-122.6368, addedAt: NOW -  7*DAY },
+  { id:34, name:"Loyal Legion",              type:"bar",        hood:"Buckman",           price:"$$",  tags:["beer","pub","cocktails"],               notes:"99 taps.",                    lat:45.5188, lng:-122.6598, addedAt: NOW -  5*DAY },
+  { id:35, name:"Half Lion",                 type:"bar",        hood:"Pearl",             price:"$$",  tags:["cocktails","bar","wine"],               notes:"",                            lat:45.5268, lng:-122.6878, addedAt: NOW -  3*DAY },
+  { id:36, name:"Departure",                 type:"bar",        hood:"Downtown",          price:"$$$", tags:["cocktails","rooftop","asian fusion"],   notes:"Great views.",                lat:45.5202, lng:-122.6788, addedAt: NOW -  1*DAY },
+];
+
+const TYPE_HEX = { restaurant:'#8b3a2a', brewery:'#2a5a7a', bar:'#3a6645' };
+
+function isNew(v) { return v.addedAt && (NOW - v.addedAt) < NEW_DAYS * DAY; }
+
+function loadVenues() {
+  try {
+    const r = localStorage.getItem(STORAGE_KEY);
+    if (r) {
+      const stored = JSON.parse(r);
+      // Merge any new SEED venues not yet in storage, preserve addedAt
+      const storedIds = new Set(stored.map(v => v.id));
+      const merged = stored.map(v => {
+        const seed = SEED.find(s => s.id === v.id);
+        return seed ? { ...v, addedAt: seed.addedAt, lat: seed.lat, lng: seed.lng } : v;
+      });
+      SEED.forEach(s => { if (!storedIds.has(s.id)) merged.push({ ...s, status: 'none' }); });
+      return merged;
+    }
+  } catch(e) {}
+  const d = SEED.map(v => ({ ...v, status:'none' }));
+  saveVenues(d); return d;
+}
+function saveVenues(v) { localStorage.setItem(STORAGE_KEY, JSON.stringify(v)); }
+
+let venues = loadVenues();
+let nextId = Math.max(...venues.map(v => v.id), 0) + 1;
+
+// ══════════════════════════════════════════════════════════════ FILTER STATE
+let activeFilters = { type: new Set(), tag: new Set(), price: new Set() };
+let showNewOnly = false;
+let currentSort = 'name';
+let leafletMarkers = {};
+
+function toggleFilter(el) {
+  const { filter, val } = el.dataset;
+  const set = activeFilters[filter];
+  if (set.has(val)) {
+    set.delete(val);
+    el.classList.remove('on','on-r','on-b','on-g');
+  } else {
+    set.add(val);
+    el.classList.add(filter === 'type' ? (val==='restaurant'?'on-r':val==='brewery'?'on-b':'on-g') : 'on');
+  }
+  renderAll();
+}
+
+function toggleNewFilter(el) {
+  showNewOnly = !showNewOnly;
+  el.classList.toggle('on', showNewOnly);
+  renderAll();
+}
+
+function getFiltered() {
+  return venues.filter(v => {
+    if (activeFilters.type.size  > 0 && !activeFilters.type.has(v.type))   return false;
+    if (activeFilters.price.size > 0 && !activeFilters.price.has(v.price)) return false;
+    if (showNewOnly && !isNew(v)) return false;
+    if (activeFilters.tag.size   > 0) {
+      const text = v.tags.join(' ').toLowerCase();
+      if (![...activeFilters.tag].some(t => text.includes(t))) return false;
+    }
+    return true;
+  });
+}
+
+function sortVenues(arr) {
+  const po = { '$':1,'$$':2,'$$$':3,'$$$$':4 };
+  return [...arr].sort((a,b) => {
+    if (currentSort === 'name')     return a.name.localeCompare(b.name);
+    if (currentSort === 'hood')     return a.hood.localeCompare(b.hood);
+    if (currentSort === 'price-lo') return po[a.price] - po[b.price];
+    if (currentSort === 'price-hi') return po[b.price] - po[a.price];
+    return 0;
+  });
+}
+
+function sortCards(val) { currentSort = val; renderCards(); }
+
+// ══════════════════════════════════════════════════════════════ LEAFLET MAP
+let map;
+
+function initMap() {
+  map = L.map('map', {
+    center: [CITY.lat, CITY.lng],
+    zoom: 13,
+    zoomControl: true,
+    scrollWheelZoom: false,
+  });
+
+  // OpenStreetMap — universally available, no API key
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  // Create a custom pane for markers that sits above the CSS filter
+  map.createPane('markers');
+  map.getPane('markers').style.zIndex = 450;
+  map.getPane('markers').style.filter = 'grayscale(0) sepia(0) brightness(1) contrast(1)';
+
+  // enable scroll zoom on click/focus
+  map.on('click', () => map.scrollWheelZoom.enable());
+  map.on('blur',  () => map.scrollWheelZoom.disable());
+
+  renderMapMarkers();
+}
+
+function makeIcon(v, dimmed, highlighted) {
+  const col = TYPE_HEX[v.type];
+  const glow = highlighted
+    ? `<circle cx="12" cy="12" r="13" fill="${col}" opacity="0.2"/>`
+    : '';
+  const opacity = dimmed ? 0.15 : 1;
+  const r  = highlighted ? 7   : 5.5;
+  const sw = highlighted ? 2.5 : 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" style="opacity:${opacity}">
+    ${glow}
+    <circle cx="12" cy="12" r="${r}" fill="${col}" stroke="white" stroke-width="${sw}"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: '',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -14],
+  });
+}
+
+function buildPopupHtml(v) {
+  const wActive  = v.status === 'want'    ? 'active-want'  : '';
+  const viActive = v.status === 'visited' ? 'active-visit' : '';
+  return `
+    <div class="popup-inner">
+      <div class="popup-name">${v.name}</div>
+      <div class="popup-meta">
+        <span class="popup-dot" style="background:${TYPE_HEX[v.type]}"></span>
+        ${v.type} · ${v.hood} · ${v.price}
+      </div>
+      <div class="popup-tags">${v.tags.slice(0,4).map(t=>`<span class="popup-tag">${t}</span>`).join('')}</div>
+    </div>
+    <div class="popup-actions">
+      <button class="popup-btn ${wActive}"  onclick="popupToggle(${v.id},'want')">+ want</button>
+      <button class="popup-btn ${viActive}" onclick="popupToggle(${v.id},'visited')">✓ visited</button>
+      <button class="popup-btn"             onclick="openDetail(${v.id})">details</button>
+    </div>`;
+}
+
+function popupToggle(id, status) {
+  const v = venues.find(x => x.id === id);
+  if (!v) return;
+  v.status = v.status === status ? 'none' : status;
+  saveVenues(venues);
+  // refresh marker icon + popup
+  const m = leafletMarkers[id];
+  if (m) {
+    const filtered = getFiltered();
+    const filteredIds = new Set(filtered.map(x => x.id));
+    const dimmed = (activeFilters.type.size > 0 || activeFilters.tag.size > 0 || activeFilters.price.size > 0)
+      && !filteredIds.has(id);
+    m.setIcon(makeIcon(v, dimmed, false));
+    m.setPopupContent(buildPopupHtml(v));
+  }
+  renderCards();
+}
+
+function renderMapMarkers() {
+  const filtered = getFiltered();
+  const filteredIds = new Set(filtered.map(v => v.id));
+  const anyFilter = activeFilters.type.size > 0 || activeFilters.tag.size > 0 || activeFilters.price.size > 0;
+
+  venues.forEach(v => {
+    const dimmed = anyFilter && !filteredIds.has(v.id);
+    const isHovered = v.id === hoveredId;
+    if (leafletMarkers[v.id]) {
+      leafletMarkers[v.id].setIcon(makeIcon(v, dimmed, isHovered));
+    } else {
+      const marker = L.marker([v.lat, v.lng], { icon: makeIcon(v, dimmed, false), pane: 'markers' })
+        .bindPopup(buildPopupHtml(v), { maxWidth: 240, closeButton: true })
+        .addTo(map);
+      marker.on('popupopen', () => {
+        const fresh = venues.find(x => x.id === v.id);
+        marker.setPopupContent(buildPopupHtml(fresh));
+      });
+      marker.on('mouseover', () => highlightVenue(v.id));
+      marker.on('mouseout',  () => unhighlightVenue());
+      leafletMarkers[v.id] = marker;
+    }
+  });
+
+  document.getElementById('map-count').textContent = `${filtered.length} venue${filtered.length !== 1 ? 's' : ''}`;
+}
+
+let hoveredId = null;
+
+function highlightVenue(id) {
+  if (hoveredId === id) return;
+  unhighlightVenue();
+  hoveredId = id;
+  const v = venues.find(x => x.id === id);
+  if (v && leafletMarkers[id]) {
+    const filtered = getFiltered();
+    const filteredIds = new Set(filtered.map(x => x.id));
+    const anyFilter = activeFilters.type.size > 0 || activeFilters.tag.size > 0 || activeFilters.price.size > 0;
+    leafletMarkers[id].setIcon(makeIcon(v, anyFilter && !filteredIds.has(id), true));
+    leafletMarkers[id].setZIndexOffset(1000);
+  }
+  const card = document.querySelector(`.venue-card[data-id="${id}"]`);
+  if (card) { card.classList.add('highlighted'); card.scrollIntoView({ behavior:'smooth', block:'nearest' }); }
+}
+
+function unhighlightVenue() {
+  if (hoveredId === null) return;
+  const id = hoveredId;
+  hoveredId = null;
+  const v = venues.find(x => x.id === id);
+  if (v && leafletMarkers[id]) {
+    const filtered = getFiltered();
+    const filteredIds = new Set(filtered.map(x => x.id));
+    const anyFilter = activeFilters.type.size > 0 || activeFilters.tag.size > 0 || activeFilters.price.size > 0;
+    leafletMarkers[id].setIcon(makeIcon(v, anyFilter && !filteredIds.has(id), false));
+    leafletMarkers[id].setZIndexOffset(0);
+  }
+  document.querySelectorAll('.venue-card.highlighted').forEach(c => c.classList.remove('highlighted'));
+}
+
+// ══════════════════════════════════════════════════════════════ CARDS
+function renderCards() {
+  const grid = document.getElementById('cards-grid');
+  const filtered = sortVenues(getFiltered());
+  document.getElementById('cards-title').textContent = `${filtered.length} venue${filtered.length !== 1 ? 's' : ''}`;
+
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="empty-state">no venues match — try removing some filters</div>';
+    return;
+  }
+  grid.innerHTML = filtered.map(v => `
+    <div class="venue-card" data-id="${v.id}" onclick="openDetail(${v.id})" onmouseenter="highlightVenue(${v.id})" onmouseleave="unhighlightVenue()">
+      <div class="card-top">
+        <div class="card-name">${v.name}${isNew(v) ? '<span class="new-badge">new</span>' : ''}</div>
+        <div class="card-price">${v.price}</div>
+      </div>
+      <div class="card-sub">
+        <span class="card-sub-dot" style="background:${TYPE_HEX[v.type]}"></span>
+        ${v.type} · ${v.hood}
+      </div>
+      <div class="card-tags">${v.tags.slice(0,3).map(t=>`<span class="card-tag">${t}</span>`).join('')}</div>
+      <div class="card-actions" onclick="event.stopPropagation()">
+        <button class="action-btn ${v.status==='want'?'want-active':''}"    onclick="quickStatus(${v.id},'want')">+ want to go</button>
+        <button class="action-btn ${v.status==='visited'?'visit-active':''}" onclick="quickStatus(${v.id},'visited')">✓ visited</button>
+      </div>
+    </div>`).join('');
+}
+
+function quickStatus(id, status) {
+  const v = venues.find(x => x.id === id);
+  if (!v) return;
+  v.status = v.status === status ? 'none' : status;
+  saveVenues(venues);
+  renderMapMarkers();
+  renderCards();
+}
+
+function renderAll() {
+  renderMapMarkers();
+  renderCards();
+}
+
+// ══════════════════════════════════════════════════════════════ MY LIST
+let listStatusFilter = 'all';
+
+function setListFilter(el, val) {
+  listStatusFilter = val;
+  document.querySelectorAll('#tab-list .list-controls .chip').forEach(c => c.classList.remove('on'));
+  el.classList.add('on');
+  renderList();
+}
+
+function renderList(search = '') {
+  const q = search.toLowerCase();
+  const container = document.getElementById('list-container');
+  const saved = venues.filter(v => {
+    if (v.status === 'none') return false;
+    if (listStatusFilter === 'want'    && v.status !== 'want')    return false;
+    if (listStatusFilter === 'visited' && v.status !== 'visited') return false;
+    if (q && !v.name.toLowerCase().includes(q) && !v.hood.toLowerCase().includes(q) && !v.tags.join(' ').toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  if (!saved.length) {
+    container.innerHTML = '<div style="color:var(--muted);padding:28px 0;font-size:12px">nothing here yet — explore the map and save places</div>';
+    return;
+  }
+  const want    = saved.filter(v => v.status === 'want');
+  const visited = saved.filter(v => v.status === 'visited');
+  let html = '';
+  if (want.length    && listStatusFilter !== 'visited') html += `<div class="list-section-label">want to go (${want.length})</div>` + want.map(listRowHtml).join('');
+  if (visited.length && listStatusFilter !== 'want')    html += `<div class="list-section-label">visited (${visited.length})</div>` + visited.map(listRowHtml).join('');
+  container.innerHTML = html;
+}
+
+function listRowHtml(v) {
+  return `<div class="list-row" onclick="openDetail(${v.id})">
+    <div class="list-dot" style="background:${TYPE_HEX[v.type]}"></div>
+    <div class="list-name">${v.name}</div>
+    <div class="list-meta">${v.hood}</div>
+    <div class="list-price">${v.price}</div>
+    <button class="list-remove" onclick="event.stopPropagation();removeFromList(${v.id})">×</button>
+  </div>`;
+}
+
+function removeFromList(id) {
+  const v = venues.find(x => x.id === id);
+  if (v) { v.status = 'none'; saveVenues(venues); renderAll(); renderList(); }
+}
+
+// ══════════════════════════════════════════════════════════════ PICKER
+let selectedCraves = new Set();
+let pickScope = 'all';
+
+function toggleCrave(el, val) {
+  selectedCraves.has(val) ? (selectedCraves.delete(val), el.classList.remove('on')) : (selectedCraves.add(val), el.classList.add('on'));
+}
+function setPickScope(el, val) {
+  pickScope = val;
+  document.querySelectorAll('.scope-row .chip').forEach(c => c.classList.remove('on'));
+  el.classList.add('on');
+}
+
+const CRAVE_MAP = {
+  pizza:     ['pizza','ny-style','neapolitan'],
+  burger:    ['burgers','smash','burger'],
+  tacos:     ['tacos','mexican','al pastor'],
+  ramen:     ['ramen','noodles','japanese','udon','pho'],
+  seafood:   ['seafood','oysters','fish','poke','hawaiian'],
+  italian:   ['italian','pasta','wine'],
+  sushi:     ['sushi','japanese','omakase'],
+  brunch:    ['brunch','breakfast','eggs'],
+  beer:      ['ipa','lager','sour','beer','hazy','farmhouse'],
+  cocktails: ['cocktails','spirits','whiskey','tiki','tropical','rum'],
+  surprise:  [],
+};
+
+function runPicker() {
+  let pool;
+  if (pickScope === 'new') {
+    pool = venues.filter(v => v.status === 'none');
+  } else {
+    pool = venues.filter(v => v.status !== 'none');
+    if (pickScope === 'want')    pool = pool.filter(v => v.status === 'want');
+    if (pickScope === 'visited') pool = pool.filter(v => v.status === 'visited');
+  }
+
+  let results;
+  if (selectedCraves.has('surprise') || selectedCraves.size === 0) {
+    results = pool.sort(() => Math.random() - 0.5).slice(0, 3);
+  } else {
+    const kws = [...selectedCraves].flatMap(c => CRAVE_MAP[c] || []);
+    const scored = pool.map(v => ({
+      ...v,
+      score: kws.reduce((s,kw) => s + ([...v.tags, v.type, v.name].join(' ').toLowerCase().includes(kw) ? 1 : 0), 0)
+    })).filter(v => v.score > 0).sort((a,b) => b.score - a.score || Math.random() - 0.5);
+    results = scored.length ? scored.slice(0,3) : pool.sort(() => Math.random()-0.5).slice(0,3);
+  }
+
+  const c = document.getElementById('pick-results');
+  const emptyMsg = pickScope === 'new'
+    ? 'all venues are already on your list'
+    : 'add places to your list first';
+  if (!results.length) { c.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:10px 0">${emptyMsg}</div>`; return; }
+  c.innerHTML = results.map(v => `
+    <div class="pick-card" onclick="openDetail(${v.id})">
+      <div class="pick-dot" style="background:${TYPE_HEX[v.type]}"></div>
+      <div>
+        <div class="pick-name">${v.name}${isNew(v) ? '<span class="new-badge" style="font-size:7px;padding:1px 4px">new</span>' : ''}</div>
+        <span class="pick-sub">${v.type} · ${v.hood} · ${v.price} · ${v.tags.slice(0,2).join(', ')}</span>
+      </div>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════════════ API PIPELINE
+
+// Portland bounding box: south, west, north, east
+const PDX_BBOX = '45.432,-122.836,45.653,-122.472';
+
+const OSM_TYPE_MAP = {
+  restaurant: 'restaurant',
+  bar: 'bar',
+  pub: 'bar',
+  brewery: 'brewery',
+  biergarten: 'bar',
+  cafe: 'restaurant',
+  fast_food: 'restaurant',
+};
+
+function osmTagsToVenue(el, idOffset) {
+  const t = el.tags || {};
+  const name = t.name;
+  if (!name) return null;
+
+  // Determine type
+  let type = 'restaurant';
+  if (t.amenity && OSM_TYPE_MAP[t.amenity]) type = OSM_TYPE_MAP[t.amenity];
+  if (t.craft === 'brewery' || t.microbrewery === 'yes') type = 'brewery';
+
+  // Build tags from cuisine, drink, brewery style
+  const rawTags = [];
+  if (t.cuisine)       rawTags.push(...t.cuisine.split(';').map(s => s.trim().replace(/_/g,' ')));
+  if (t.brewery)       rawTags.push(t.brewery.replace(/_/g,' '));
+  if (t.drink)         rawTags.push(t.drink.replace(/_/g,' '));
+  if (t.outdoor_seating === 'yes') rawTags.push('outdoor');
+  if (t.diet_vegan === 'yes' || t.diet_vegetarian === 'yes') rawTags.push('vegetarian');
+
+  // Price level from OSM (stars 1-4 → $-$$$$)
+  const priceMap = {'1':'$','2':'$$','3':'$$$','4':'$$$$'};
+  const price = priceMap[t['price_level']] || priceMap[t['stars']] || '$$';
+
+  const lat = el.type === 'node' ? el.lat : el.center?.lat;
+  const lng = el.type === 'node' ? el.lon : el.center?.lon;
+  if (!lat || !lng) return null;
+
+  return {
+    id: idOffset + el.id,
+    osmId: el.id,
+    name,
+    type,
+    hood: '',          // filled by Nominatim pass
+    price,
+    tags: rawTags.slice(0, 6),
+    notes: [t.website ? `🌐 ${t.website}` : '', t.opening_hours ? `⏱ ${t.opening_hours}` : ''].filter(Boolean).join('\n'),
+    website: t.website || '',
+    hours: t.opening_hours || '',
+    lat,
+    lng,
+    addedAt: Date.now(),
+    status: 'none',
+    source: 'osm',
+  };
+}
+
+async function fetchOverpass() {
+  const query = `
+    [out:json][timeout:25];
+    (
+      node["amenity"~"restaurant|bar|pub|cafe|biergarten"]["name"](${PDX_BBOX});
+      node["craft"="brewery"]["name"](${PDX_BBOX});
+      way["amenity"~"restaurant|bar|pub|cafe|biergarten"]["name"](${PDX_BBOX});
+      way["craft"="brewery"]["name"](${PDX_BBOX});
+    );
+    out center tags;
+  `;
+  const res = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    body: 'data=' + encodeURIComponent(query),
+  });
+  if (!res.ok) throw new Error(`Overpass ${res.status}`);
+  const json = await res.json();
+  return json.elements || [];
+}
+
+// Reverse geocode a batch of venues — Nominatim asks for 1 req/sec
+async function enrichNeighborhoods(newVenues) {
+  const BATCH = 8; // limit concurrent requests
+  for (let i = 0; i < newVenues.length; i += BATCH) {
+    const slice = newVenues.slice(i, i + BATCH);
+    await Promise.all(slice.map(async v => {
+      try {
+        const r = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${v.lat}&lon=${v.lng}&zoom=14&format=json`,
+          { headers: { 'Accept-Language': 'en' } }
+        );
+        const j = await r.json();
+        const a = j.address || {};
+        v.hood = a.neighbourhood || a.suburb || a.quarter || a.city_district || a.county || '';
+      } catch(e) { /* leave hood blank */ }
+    }));
+    // Nominatim rate limit: 1 req/sec, we batch 8 at a time with a pause
+    if (i + BATCH < newVenues.length) await new Promise(r => setTimeout(r, 1200));
+  }
+}
+
+// Wikipedia summary for notable venues by name
+async function enrichWikipedia(newVenues) {
+  // Only try notable-ish places (ones with 0 tags — more likely to be well-known destinations)
+  const candidates = newVenues.filter(v => v.tags.length === 0).slice(0, 20);
+  await Promise.all(candidates.map(async v => {
+    try {
+      const r = await fetch(
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(v.name + ' Portland')}`,
+        { headers: { 'Accept': 'application/json' } }
+      );
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j.type === 'standard' && j.extract && j.extract.length < 300) {
+        // Prepend description to notes only if it looks relevant
+        const lower = j.extract.toLowerCase();
+        if (lower.includes('restaurant') || lower.includes('bar') || lower.includes('brew') || lower.includes('portland')) {
+          v.notes = (j.extract + (v.notes ? '\n' + v.notes : '')).trim();
+        }
+      }
+    } catch(e) { /* skip */ }
+  }));
+}
+
+async function checkForNewVenues() {
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('spinning');
+  btn.disabled = true;
+  btn.textContent = '↻ fetching…';
+
+  try {
+    // ── Stage 1: Overpass
+    btn.textContent = '↻ overpass…';
+    const elements = await fetchOverpass();
+
+    // Deduplicate against existing venues by OSM id or name
+    const existingOsmIds = new Set(venues.filter(v => v.osmId).map(v => v.osmId));
+    const existingNames  = new Set(venues.map(v => v.name.toLowerCase()));
+    const ID_OFFSET = 100000; // avoid collisions with seed ids
+
+    const newVenues = elements
+      .map(el => osmTagsToVenue(el, ID_OFFSET))
+      .filter(v => v && !existingOsmIds.has(v.osmId) && !existingNames.has(v.name.toLowerCase()));
+
+    if (newVenues.length === 0) {
+      btn.textContent = '↻ up to date';
+      btn.classList.remove('spinning');
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = '↻ refresh'; }, 2800);
+      return;
+    }
+
+    // ── Stage 2: Nominatim neighborhoods (rate-limited)
+    btn.textContent = `↻ locating ${newVenues.length}…`;
+    await enrichNeighborhoods(newVenues);
+
+    // ── Stage 3: Wikipedia descriptions (best-effort)
+    btn.textContent = '↻ enriching…';
+    await enrichWikipedia(newVenues);
+
+    // ── Merge & save
+    venues.push(...newVenues);
+    saveVenues(venues);
+    renderAll();
+
+    btn.textContent = `↻ +${newVenues.length} added`;
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+    setTimeout(() => { btn.textContent = '↻ refresh'; }, 3500);
+
+  } catch(err) {
+    console.error('Refresh failed:', err);
+    btn.textContent = '↻ error — retry?';
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+    setTimeout(() => { btn.textContent = '↻ refresh'; }, 3000);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════ DETAIL OVERLAY
+let detailId = null;
+
+function openDetail(id) {
+  detailId = id;
+  const v = venues.find(x => x.id === id);
+  if (!v) return;
+  const extraFields = [
+    v.website ? `<div class="detail-section">website</div><div style="font-size:11px;color:var(--amber);word-break:break-all"><a href="${v.website}" target="_blank" style="color:var(--amber)">${v.website}</a></div>` : '',
+    v.hours   ? `<div class="detail-section">hours</div><div style="font-size:11px;color:var(--muted);line-height:1.5">${v.hours.replace(/;/g,'<br>')}</div>` : '',
+  ].filter(Boolean).join('');
+
+  document.getElementById('detail-content').innerHTML = `
+    <div class="detail-name">${v.name}</div>
+    <div class="detail-type">
+      <div class="detail-type-dot" style="background:${TYPE_HEX[v.type]}"></div>
+      ${v.type} · ${v.hood || 'portland'} · ${v.price}
+    </div>
+    <div class="detail-section">tags</div>
+    <div class="detail-tags">${v.tags.length ? v.tags.map(t=>`<span class="detail-tag">${t}</span>`).join('') : '<span style="color:var(--muted);font-size:11px">none</span>'}</div>
+    ${extraFields}
+    <div class="detail-section">notes</div>
+    <textarea class="detail-notes" id="det-notes">${v.notes}</textarea>
+    <div class="detail-actions">
+      <button class="det-btn ${v.status==='want'?'active-save':''}"    onclick="detSetStatus('want')">+ want to go</button>
+      <button class="det-btn ${v.status==='visited'?'active-visit':''}" onclick="detSetStatus('visited')">✓ visited</button>
+      <button class="det-btn ${v.status==='none'?'active':''}" onclick="detSetStatus('none')" style="${v.status==='none'?'background:var(--bg2)':''}">clear</button>
+    </div>
+    <button class="save-det-btn" onclick="saveDetail()">save →</button>`;
+  document.getElementById('overlay').classList.add('open');
+}
+
+function detSetStatus(s) {
+  const v = venues.find(x => x.id === detailId);
+  if (v) v.status = s;
+  const btns = document.querySelectorAll('.det-btn');
+  btns.forEach(b => b.classList.remove('active-save','active-visit','active'));
+  if (s === 'want') btns[0].classList.add('active-save');
+  else if (s === 'visited') btns[1].classList.add('active-visit');
+  else { btns[2].classList.add('active'); btns[2].style.background = 'var(--bg2)'; }
+}
+
+function saveDetail() {
+  const v = venues.find(x => x.id === detailId);
+  if (v) { v.notes = document.getElementById('det-notes').value; saveVenues(venues); renderAll(); renderList(); }
+  closeOverlay();
+}
+
+function closeOverlay() { document.getElementById('overlay').classList.remove('open'); }
+function maybeCloseOverlay(e) { if (e.target === document.getElementById('overlay')) closeOverlay(); }
+
+// ══════════════════════════════════════════════════════════════ TAB SWITCHING
+function switchTab(tab) {
+  document.getElementById('tab-btn-explore').classList.toggle('active', tab === 'explore');
+  document.getElementById('tab-btn-list').classList.toggle('active', tab === 'list');
+  document.getElementById('tab-explore').style.display = tab === 'explore' ? '' : 'none';
+  document.getElementById('tab-list').style.display    = tab === 'list'    ? '' : 'none';
+  document.getElementById('filter-bar').style.display  = tab === 'explore' ? '' : 'none';
+  if (tab === 'list') renderList();
+  if (tab === 'explore') setTimeout(() => map.invalidateSize(), 50);
+}
+
+// ══════════════════════════════════════════════════════════════ INIT
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('city-label').textContent = CITY.label;
+  initMap();
+  renderCards();
+});
+</script>
+</body>
+</html>
