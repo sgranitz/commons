@@ -1082,6 +1082,16 @@ function isChain(el) {
   return FAST_FOOD_BRANDS.has(brand) || FAST_FOOD_BRANDS.has(name);
 }
 
+const OSM_TYPE_MAP = {
+  restaurant: 'restaurant',
+  bar: 'bar',
+  pub: 'bar',
+  brewery: 'brewery',
+  biergarten: 'bar',
+  cafe: 'restaurant',
+  fast_food: 'restaurant',
+};
+
 const WAVE = `<span class="wave-dots"><span></span><span></span><span></span><span></span><span></span></span>`;
 
 function btnBusy(btn, label) {
