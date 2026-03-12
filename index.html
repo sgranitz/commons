@@ -622,7 +622,7 @@ header {
 
 <script>
 // ══════════════════════════════════════════════════════════════ DATA
-const STORAGE_KEY = 'the-commons-v1';
+const STORAGE_KEY = 'the-commons-v2';
 const CITY = { name: 'Portland', state: 'OR', label: 'portland, or', lat: 45.528, lng: -122.658 };
 const NEW_DAYS = 14; // venues added within this many days show as "new"
 const NOW = Date.now();
@@ -1115,8 +1115,8 @@ function osmTagsToVenue(el, idOffset) {
   if (!name || name.length < 4) return null;
   if (isChain(el)) return null;
 
-  // Require at least one quality signal: cuisine, website, opening_hours, or phone
-  const hasSignal = t.cuisine || t.website || t.opening_hours || t.phone || t['addr:street'];
+  // Require meaningful quality signal — address alone is not enough
+  const hasSignal = t.cuisine || t.website || t.opening_hours || t.phone;
   if (!hasSignal) return null;
 
   // Determine type
@@ -1139,6 +1139,9 @@ function osmTagsToVenue(el, idOffset) {
   const lat = el.type === 'node' ? el.lat : el.center?.lat;
   const lng = el.type === 'node' ? el.lon : el.center?.lon;
   if (!lat || !lng) return null;
+
+  // Hard clip to bbox — way centroids can drift outside the query boundary
+  if (lat < 45.462 || lat > 45.595 || lng < -122.710 || lng > -122.578) return null;
 
   return {
     id: idOffset + el.id,
