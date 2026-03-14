@@ -53,6 +53,22 @@ header {
   border-bottom: 1px solid var(--border);
   background: var(--bg2);
 }
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.back-link {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-decoration: none;
+  opacity: 0.7;
+}
+.back-link:hover { color: var(--amber); opacity: 1; }
+
 .wordmark {
   font-family: var(--serif);
   font-size: 22px;
@@ -510,7 +526,10 @@ header {
 
 <div class="nav-wrapper">
 <header>
-  <div class="wordmark">the <em>commons</em><span id="city-label">portland, or</span></div>
+  <div class="header-left">
+    <a class="back-link" href="https://www.stoult.com/workshop/">← return to the workshop</a>
+    <div class="wordmark">the <em>commons</em><span id="city-label">portland, or</span></div>
+  </div>
 </header>
 
 <div class="tabs">
