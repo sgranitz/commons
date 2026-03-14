@@ -520,6 +520,65 @@ header {
   cursor: pointer; transition: background 0.15s;
 }
 .save-det-btn:hover { background: #d4b87e; }
+
+/* ── AUTH ── */
+.header-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.identity-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 10px 5px 8px;
+}
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+}
+.user-email-display {
+  font-size: 10px;
+  color: var(--muted);
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.email-input {
+  background: var(--bg2);
+  border: 1px dashed var(--border2);
+  border-radius: var(--radius);
+  color: var(--cream);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 5px 9px;
+  outline: none;
+  width: 148px;
+  transition: border-color 0.14s;
+}
+.email-input:focus { border-color: var(--amber); border-style: solid; }
+.email-input::placeholder { color: var(--faint); }
+.auth-btn {
+  background: none;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.auth-btn:hover { border-color: var(--amber); color: var(--amber); }
 </style>
 </head>
 <body>
@@ -529,6 +588,19 @@ header {
   <div class="header-left">
     <a class="back-link" href="https://www.stoult.com/workshop/">← return to the workshop</a>
     <div class="wordmark">the <em>commons</em><span id="city-label">portland, or</span></div>
+  </div>
+  <div class="header-right">
+    <div id="auth-out" style="display:flex;align-items:center;gap:6px">
+      <input class="email-input" id="emailInput" type="email" placeholder="email">
+      <button class="auth-btn" id="auth-send-btn" onclick="signInWithMagicLink()">sign in</button>
+    </div>
+    <div id="auth-in" style="display:none;align-items:center;gap:8px">
+      <div class="identity-pill">
+        <div class="status-dot"></div>
+        <span id="auth-email" class="user-email-display"></span>
+      </div>
+      <button class="auth-btn" onclick="signOut()">sign out</button>
+    </div>
   </div>
 </header>
 
@@ -640,6 +712,139 @@ header {
 </div>
 
 <script>
+// ══════════════════════════════════════════════════════════════ SUPABASE
+const SUPABASE_URL = 'https://agbcscmgjtekhnhtqgnh.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_4cXC1Ff1Y6yvXrRpdU7Urg_st7ayfB-';
+let db = null;
+let currentUser = null;
+
+async function initSupabase() {
+  const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+  db = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
+  await restoreSession();
+  bindAuthListener();
+}
+
+function showSignedIn(user) {
+  document.getElementById('auth-out').style.display = 'none';
+  document.getElementById('auth-in').style.display  = 'flex';
+  document.getElementById('auth-email').textContent  = user.email;
+}
+
+function showSignedOut() {
+  document.getElementById('auth-in').style.display  = 'none';
+  document.getElementById('auth-out').style.display = 'flex';
+}
+
+async function signInWithMagicLink() {
+  const email = document.getElementById('emailInput').value.trim();
+  if (!email) return;
+  const btn = document.getElementById('auth-send-btn');
+  btn.textContent = 'sending…';
+  btn.disabled = true;
+  try {
+    const { error } = await db.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.href, shouldCreateUser: true }
+    });
+    btn.textContent = error ? 'error — retry' : 'check email ✓';
+  } catch(e) {
+    btn.textContent = 'error — retry';
+  }
+  btn.disabled = false;
+  setTimeout(() => { btn.textContent = 'sign in'; }, 4000);
+}
+
+async function signOut() {
+  if (!db) return;
+  await db.auth.signOut();
+}
+
+async function restoreSession() {
+  const { data } = await db.auth.getSession();
+  currentUser = data.session?.user ?? null;
+  if (currentUser) {
+    showSignedIn(currentUser);
+    await migrateLocalStorage();
+    await loadSaves();
+  } else {
+    showSignedOut();
+  }
+}
+
+function bindAuthListener() {
+  db.auth.onAuthStateChange(async (event, session) => {
+    currentUser = session?.user ?? null;
+    if (currentUser) {
+      showSignedIn(currentUser);
+      if (event === 'SIGNED_IN') {
+        await migrateLocalStorage();
+        await loadSaves();
+      }
+    } else {
+      showSignedOut();
+      venues = loadVenues();
+      renderAll();
+      renderList();
+    }
+  });
+}
+
+async function loadSaves() {
+  if (!db || !currentUser) return;
+  const { data, error } = await db.from('venue_saves').select('venue_id,status,notes');
+  if (error) { console.error('loadSaves:', error); return; }
+  data.forEach(s => {
+    const v = venues.find(x => x.id === s.venue_id);
+    if (v) { v.status = s.status; v.notes = s.notes; }
+  });
+  renderAll();
+  renderList();
+}
+
+async function persistSave(venueId) {
+  if (!db || !currentUser) return;
+  const v = venues.find(x => x.id === venueId);
+  if (!v) return;
+  const { error } = await db.from('venue_saves').upsert({
+    user_id: currentUser.id,
+    venue_id: venueId,
+    status: v.status,
+    notes: v.notes || '',
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'user_id,venue_id' });
+  if (error) console.error('persistSave:', error);
+}
+
+async function migrateLocalStorage() {
+  if (!db || !currentUser) return;
+  const migKey = STORAGE_KEY + '_mig_' + currentUser.id;
+  if (localStorage.getItem(migKey)) return;
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) { localStorage.setItem(migKey, '1'); return; }
+  try {
+    const stored = JSON.parse(raw);
+    const rows = stored
+      .filter(v => (v.status && v.status !== 'none') || v.notes)
+      .map(v => ({
+        user_id: currentUser.id,
+        venue_id: v.id,
+        status: v.status || 'none',
+        notes: v.notes || '',
+        updated_at: new Date().toISOString()
+      }));
+    if (rows.length) {
+      const { error } = await db.from('venue_saves')
+        .upsert(rows, { onConflict: 'user_id,venue_id', ignoreDuplicates: true });
+      if (error) { console.error('migration:', error); return; }
+      console.log(`migrated ${rows.length} venue saves from localStorage`);
+    }
+    localStorage.setItem(migKey, '1');
+  } catch(e) { console.error('migration parse error:', e); }
+}
+
 // ══════════════════════════════════════════════════════════════ DATA
 const STORAGE_KEY = 'the-commons-v2';
 const CITY = { name: 'Portland', state: 'OR', label: 'portland, or', lat: 45.528, lng: -122.658 };
@@ -843,6 +1048,7 @@ function popupToggle(id, status) {
   if (!v) return;
   v.status = v.status === status ? 'none' : status;
   saveVenues(venues);
+  persistSave(id);
   // refresh marker icon + popup
   const m = leafletMarkers[id];
   if (m) {
@@ -949,6 +1155,7 @@ function quickStatus(id, status) {
   if (!v) return;
   v.status = v.status === status ? 'none' : status;
   saveVenues(venues);
+  persistSave(id);
   renderMapMarkers();
   renderCards();
 }
@@ -1003,7 +1210,7 @@ function listRowHtml(v) {
 
 function removeFromList(id) {
   const v = venues.find(x => x.id === id);
-  if (v) { v.status = 'none'; saveVenues(venues); renderAll(); renderList(); }
+  if (v) { v.status = 'none'; saveVenues(venues); persistSave(id); renderAll(); renderList(); }
 }
 
 // ══════════════════════════════════════════════════════════════ PICKER
@@ -1332,7 +1539,7 @@ function detSetStatus(s) {
 
 function saveDetail() {
   const v = venues.find(x => x.id === detailId);
-  if (v) { v.notes = document.getElementById('det-notes').value; saveVenues(venues); renderAll(); renderList(); }
+  if (v) { v.notes = document.getElementById('det-notes').value; saveVenues(venues); persistSave(detailId); renderAll(); renderList(); }
   closeOverlay();
 }
 
@@ -1355,6 +1562,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('city-label').textContent = CITY.label;
   initMap();
   renderCards();
+  initSupabase();
 });
 </script>
 </body>
