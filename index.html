@@ -718,11 +718,36 @@ const SUPABASE_KEY = 'sb_publishable_4cXC1Ff1Y6yvXrRpdU7Urg_st7ayfB-';
 let db = null;
 let currentUser = null;
 
-async function initSupabase() {
+async function ensureDb() {
+  if (db) return;
   const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
   db = createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
+}
+
+async function initVenues() {
+  try {
+    await ensureDb();
+    const { data, error } = await db.from('venues').select('*').order('name');
+    if (error) throw error;
+    return (data || []).map(v => ({
+      ...v,
+      addedAt: new Date(v.added_at).getTime(),
+      status: 'none',
+      tags: v.tags || [],
+      notes: v.notes || '',
+      website: v.website || '',
+      hours: v.hours || '',
+    }));
+  } catch(e) {
+    console.warn('venues: could not load from Supabase', e.message);
+    return [];
+  }
+}
+
+async function initSupabase() {
+  await ensureDb();
   await restoreSession();
   bindAuthListener();
 }
@@ -920,8 +945,8 @@ function loadVenues() {
 }
 function saveVenues(v) { localStorage.setItem(STORAGE_KEY, JSON.stringify(v)); }
 
-let venues = loadVenues();
-let nextId = Math.max(...venues.map(v => v.id), 0) + 1;
+let venues = [];
+let nextId = 1;
 
 // ══════════════════════════════════════════════════════════════ FILTER STATE
 let activeFilters = { type: new Set(), tag: new Set(), price: new Set() };
@@ -1129,7 +1154,9 @@ function renderCards() {
   document.getElementById('cards-title').textContent = `${filtered.length} venue${filtered.length !== 1 ? 's' : ''}`;
 
   if (!filtered.length) {
-    grid.innerHTML = '<div class="empty-state">no venues match — try removing some filters</div>';
+    grid.innerHTML = venues.length
+      ? '<div class="empty-state">no venues match — try removing some filters</div>'
+      : '<div class="empty-state">no venues loaded — sign in and click refresh to fetch portland venues</div>';
     return;
   }
   grid.innerHTML = filtered.map(v => `
@@ -1484,7 +1511,32 @@ async function checkForNewVenues() {
 
     // ── Merge & save
     venues.push(...newVenues);
-    saveVenues(venues);
+    nextId = Math.max(...venues.map(v => v.id), 0) + 1;
+
+    // Upsert to Supabase so all users get the new venues
+    if (db && currentUser) {
+      const rows = newVenues.map(v => ({
+        id: v.id,
+        osm_id: v.osmId || null,
+        name: v.name,
+        type: v.type,
+        hood: v.hood,
+        price: v.price,
+        tags: v.tags,
+        notes: v.notes || '',
+        website: v.website || '',
+        hours: v.hours || '',
+        lat: v.lat,
+        lng: v.lng,
+        added_at: new Date(v.addedAt).toISOString(),
+        source: 'osm',
+        updated_at: new Date().toISOString(),
+      }));
+      const { error: upsertErr } = await db.from('venues').upsert(rows, { onConflict: 'id' });
+      if (upsertErr) console.error('venues upsert:', upsertErr);
+    }
+
+    saveVenues(venues); // local cache
     renderAll();
 
     btnDone(btn, `↻ +${newVenues.length} added`, 3500);
@@ -1558,11 +1610,13 @@ function switchTab(tab) {
 }
 
 // ══════════════════════════════════════════════════════════════ INIT
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('city-label').textContent = CITY.label;
+  venues = await initVenues();
+  nextId = Math.max(...venues.map(v => v.id), 0) + 1;
   initMap();
   renderCards();
-  initSupabase();
+  initSupabase(); // loads auth + overlays user saves in background
 });
 </script>
 </body>
