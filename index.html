@@ -10,6 +10,12 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
+@font-face {
+  font-family: 'Diesel Rudolf';
+  src: url('../branding/Diesel-Rudolf_reduced.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}
 :root {
   --bg:       #1a1612;
   --bg2:      #221e19;
@@ -71,13 +77,12 @@ header {
 .back-link:hover { color: var(--amber); opacity: 1; }
 
 .wordmark {
-  font-family: var(--serif);
+  font-family: 'Diesel Rudolf', serif;
   font-size: 22px;
   font-weight: 400;
   color: var(--cream);
-  letter-spacing: -0.02em;
 }
-.wordmark em { font-style: italic; color: var(--amber); }
+.wordmark em { color: var(--amber); }
 .wordmark span {
   font-family: var(--mono);
   font-size: 10px;
