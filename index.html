@@ -576,12 +576,12 @@ header {
   border-radius: var(--radius);
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 5px 10px;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: all 0.2s;
   white-space: nowrap;
 }
 .auth-btn:hover { border-color: var(--amber); color: var(--amber); }
@@ -674,6 +674,7 @@ header {
       <div style="display:flex;align-items:center;gap:10px">
         <div class="cards-title" id="cards-title">all venues</div>
         <div class="chip" id="new-filter-chip" data-filter="new" data-val="new" onclick="toggleNewFilter(this)" style="padding:3px 8px;font-size:9px;letter-spacing:0.1em">✦ new</div>
+        <div class="chip" id="hide-visited-chip" onclick="toggleHideVisited(this)" style="padding:3px 8px;font-size:9px;letter-spacing:0.1em">✓ hide visited</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <button class="refresh-btn" onclick="checkForNewVenues()" id="refresh-btn" title="check for new venues">↻ refresh</button>
@@ -749,6 +750,9 @@ header {
 
 <script>
 // ══════════════════════════════════════════════════════════════ SUPABASE
+// SUPABASE_KEY is the publishable (anon) key — safe to expose in client-side
+// code ONLY when Row Level Security (RLS) is enabled on all tables.
+// Verify RLS is active: Supabase dashboard → Table Editor → each table → RLS enabled.
 const SUPABASE_URL = 'https://agbcscmgjtekhnhtqgnh.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_4cXC1Ff1Y6yvXrRpdU7Urg_st7ayfB-';
 let db = null;
@@ -987,8 +991,14 @@ let nextId = 1;
 // ══════════════════════════════════════════════════════════════ FILTER STATE
 let activeFilters = { type: new Set(), tag: new Set(), price: new Set() };
 let showNewOnly = false;
+let hideVisited = false;
 let currentSort = 'name';
 let leafletMarkers = {};
+
+// ── Infinite scroll state ──
+const CARDS_PER_PAGE = 100;
+let cardsPage = 0;
+let currentFilteredCards = [];
 
 function toggleFilter(el) {
   const { filter, val } = el.dataset;
@@ -1009,11 +1019,18 @@ function toggleNewFilter(el) {
   renderAll();
 }
 
+function toggleHideVisited(el) {
+  hideVisited = !hideVisited;
+  el.classList.toggle('on', hideVisited);
+  renderAll();
+}
+
 function getFiltered() {
   return venues.filter(v => {
     if (activeFilters.type.size  > 0 && !activeFilters.type.has(v.type))   return false;
     if (activeFilters.price.size > 0 && !activeFilters.price.has(v.price)) return false;
     if (showNewOnly && !isNew(v)) return false;
+    if (hideVisited && v.status === 'visited') return false;
     if (activeFilters.tag.size   > 0) {
       const text = v.tags.join(' ').toLowerCase();
       if (![...activeFilters.tag].some(t => text.includes(t))) return false;
@@ -1184,18 +1201,8 @@ function unhighlightVenue() {
 }
 
 // ══════════════════════════════════════════════════════════════ CARDS
-function renderCards() {
-  const grid = document.getElementById('cards-grid');
-  const filtered = sortVenues(getFiltered());
-  document.getElementById('cards-title').textContent = `${filtered.length} venue${filtered.length !== 1 ? 's' : ''}`;
-
-  if (!filtered.length) {
-    grid.innerHTML = venues.length
-      ? '<div class="empty-state">no venues match — try removing some filters</div>'
-      : '<div class="empty-state">no venues loaded — sign in and click refresh to fetch portland venues</div>';
-    return;
-  }
-  grid.innerHTML = filtered.map(v => `
+function venueCardHtml(v) {
+  return `
     <div class="venue-card" data-id="${v.id}" onclick="openDetail(${v.id})" onmouseenter="highlightVenue(${v.id})" onmouseleave="unhighlightVenue()">
       <div class="card-top">
         <div class="card-name">${v.name}${isNew(v) ? '<span class="new-badge">new</span>' : ''}</div>
@@ -1210,7 +1217,61 @@ function renderCards() {
         <button class="action-btn ${v.status==='want'?'want-active':''}"    onclick="quickStatus(${v.id},'want')">+ want to go</button>
         <button class="action-btn ${v.status==='visited'?'visit-active':''}" onclick="quickStatus(${v.id},'visited')">✓ visited</button>
       </div>
-    </div>`).join('');
+    </div>`;
+}
+
+function renderCards() {
+  const grid = document.getElementById('cards-grid');
+  cardScrollObserver.disconnect();
+  currentFilteredCards = sortVenues(getFiltered());
+  cardsPage = 0;
+  document.getElementById('cards-title').textContent = `${currentFilteredCards.length} venue${currentFilteredCards.length !== 1 ? 's' : ''}`;
+
+  if (!currentFilteredCards.length) {
+    grid.innerHTML = venues.length
+      ? '<div class="empty-state">no venues match — try removing some filters</div>'
+      : '<div class="empty-state">no venues loaded — sign in and click refresh to fetch portland venues</div>';
+    return;
+  }
+
+  const page = currentFilteredCards.slice(0, CARDS_PER_PAGE);
+  grid.innerHTML = page.map(venueCardHtml).join('');
+  cardsPage = 1;
+  updateCardSentinel();
+}
+
+function appendMoreCards() {
+  if (cardsPage * CARDS_PER_PAGE >= currentFilteredCards.length) return;
+  const grid = document.getElementById('cards-grid');
+  const sentinel = document.getElementById('cards-sentinel');
+  const page = currentFilteredCards.slice(cardsPage * CARDS_PER_PAGE, (cardsPage + 1) * CARDS_PER_PAGE);
+  page.forEach(v => {
+    const div = document.createElement('div');
+    div.innerHTML = venueCardHtml(v).trim();
+    grid.insertBefore(div.firstChild, sentinel);
+  });
+  cardsPage++;
+}
+
+// Set up IntersectionObserver for infinite scroll
+const cardScrollObserver = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting) {
+    appendMoreCards();
+    updateCardSentinel();
+  }
+}, { rootMargin: '200px' });
+
+function updateCardSentinel() {
+  let sentinel = document.getElementById('cards-sentinel');
+  const hasMore = cardsPage * CARDS_PER_PAGE < currentFilteredCards.length;
+  if (!sentinel) {
+    sentinel = document.createElement('div');
+    sentinel.id = 'cards-sentinel';
+    sentinel.style.cssText = 'grid-column:1/-1;height:1px';
+    document.getElementById('cards-grid').appendChild(sentinel);
+    cardScrollObserver.observe(sentinel);
+  }
+  sentinel.style.display = hasMore ? 'block' : 'none';
 }
 
 function quickStatus(id, status) {
