@@ -1056,7 +1056,7 @@ const STOULT = (() => {
       const r = await dFetch('GET', `/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType)&pageSize=1000`);
       const files = r?.files || [];
       for (const f of files) this._ids[rel ? `${rel}/${f.name}` : f.name] = f.id;
-      return files.map(f => ({ name: f.name }));
+      return files.map(f => ({ name: f.name, file: f.mimeType !== 'application/vnd.google-apps.folder' ? true : undefined }));
     },
     async deleteFile(rel) {
       if (!this._ids[rel]) {
@@ -1095,7 +1095,36 @@ const STOULT = (() => {
   async function loadHandle() { try { const db = await _openIDB(); return new Promise((res, rej) => { const tx = db.transaction(IDB_STORE, 'readonly'); const req = tx.objectStore(IDB_STORE).get(IDB_KEY); req.onsuccess = e => res(e.target.result || null); req.onerror = rej; }); } catch { return null; } }
   async function clearHandle() { try { const db = await _openIDB(); await new Promise((res, rej) => { const tx = db.transaction(IDB_STORE, 'readwrite'); tx.objectStore(IDB_STORE).delete(IDB_KEY); tx.oncomplete = res; tx.onerror = rej; }); } catch {} }
 
-  return { initGoogle, signIn, signOut, getUser, getToken, DriveStorage, FSALStorage, loadHandle, clearHandle };
+  function parseFrontmatter(raw) {
+    if (!raw) return { meta: {}, body: '' };
+    raw = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const m = raw.match(/^---\n([\s\S]*?)\n---(?:\n|$)([\s\S]*)/);
+    if (!m) return { meta: {}, body: raw };
+    const unwiki = s => s.replace(/\[\[(.*?)(?:\|[^\]]*)?\]\]/g, (_, p) => p.split('/').pop().replace(/\.md$/i, ''));
+    const meta = {}, lines = m[1].split('\n'); let i = 0;
+    while (i < lines.length) {
+      const kv = lines[i].match(/^([\w-]+):\s*(.*)/); if (!kv) { i++; continue; }
+      const key = kv[1], val = kv[2].trim();
+      if (val === '') { const items = []; i++; while (i < lines.length && /^\s+-/.test(lines[i])) items.push(unwiki(lines[i++].replace(/^\s+-\s*/, '').trim().replace(/^["']|["']$/g,''))); meta[key] = items; }
+      else if (val.startsWith('[') && val.endsWith(']')) { meta[key] = val.slice(1,-1).split(',').map(s => unwiki(s.trim().replace(/^["']|["']$/g,''))); i++; }
+      else { meta[key] = unwiki(val.replace(/^["']|["']$/g,'')); i++; }
+    }
+    return { meta, body: m[2].trimEnd() };
+  }
+  function buildMarkdown(meta, body = '') {
+    const lines = ['---'];
+    for (const [k, v] of Object.entries(meta)) {
+      if (v === null || v === undefined || v === '') continue;
+      if (Array.isArray(v)) { if (!v.length) continue; lines.push(`${k}:`); v.forEach(item => lines.push(`  - ${item}`)); }
+      else lines.push(`${k}: ${v}`);
+    }
+    lines.push('---'); if (body && body.trim()) lines.push('', body.trim());
+    return lines.join('\n') + '\n';
+  }
+  function slug(s) { return String(s).toLowerCase().trim().replace(/[^a-z0-9\s-]/g,'').replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'') || 'item'; }
+
+  let _storage = null;
+  return { initGoogle, signIn, signOut, getUser, getToken, DriveStorage, FSALStorage, loadHandle, clearHandle, getStorage() { return _storage; }, setStorage(s) { _storage = s; }, parseFrontmatter, buildMarkdown, slug };
 })();
 
 // ── GOOGLE AUTH + VAULT SAVES ─────────────────────────────────────────────────
@@ -1107,25 +1136,6 @@ let storage = null;
 
 function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-}
-
-function parseFrontmatter(text) {
-  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const match = text.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
-  const result = {};
-  for (const line of match[1].split('\n')) {
-    const m = line.match(/^(\w+):\s*(.*)$/);
-    if (m) result[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1') || null;
-  }
-  const bodyMatch = text.match(/^---\n[\s\S]*?\n---\n?([\s\S]*)$/);
-  result._body = bodyMatch ? bodyMatch[1].trim() : '';
-  return result;
-}
-
-function buildSaveFile(v) {
-  const date = new Date().toISOString().split('T')[0];
-  return `---\ntitle: "${v.name.replace(/"/g, '\\"')}"\nvenue_id: ${v.id}\nstatus: ${v.status}\nsaved: ${date}\n---\n${v.notes ? '\n' + v.notes.trim() + '\n' : ''}`;
 }
 
 function showToast(msg) {
@@ -1301,11 +1311,11 @@ async function loadSaves() {
       files.filter(f => f.name.endsWith('.md')).map(async f => {
         const text = await storage.readFile(`${COMMONS_BASE}/${f.name}`);
         if (!text) return;
-        const fm = parseFrontmatter(text);
-        if (!fm?.venue_id) return;
-        const vid = parseInt(fm.venue_id);
+        const { meta, body } = STOULT.parseFrontmatter(text);
+        if (!meta?.venue_id) return;
+        const vid = parseInt(meta.venue_id);
         const v = venues.find(x => x.id === vid);
-        if (v) { v.status = fm.status || 'none'; v.notes = fm._body || ''; }
+        if (v) { v.status = meta.status || 'none'; v.notes = body || ''; }
       })
     );
     renderAll();
@@ -1317,13 +1327,13 @@ async function persistSave(venueId) {
   if (!storage) return;
   const v = venues.find(x => x.id === venueId);
   if (!v) return;
-  const slug = slugify(v.name);
-  const path = `${COMMONS_BASE}/${slug}.md`;
+  const path = `${COMMONS_BASE}/${slugify(v.name)}.md`;
   if (v.status === 'none' && !v.notes) {
     try { await storage.deleteFile(path); } catch {}
     return;
   }
-  try { await storage.writeFile(path, buildSaveFile(v)); } catch(e) { console.error('persistSave:', e); }
+  const date = new Date().toISOString().split('T')[0];
+  try { await storage.writeFile(path, STOULT.buildMarkdown({ title: v.name, venue_id: v.id, status: v.status, saved: date }, v.notes || '')); } catch(e) { console.error('persistSave:', e); }
 }
 
 // ══════════════════════════════════════════════════════════════ DATA
