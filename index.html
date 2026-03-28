@@ -861,6 +861,7 @@ header {
 // ══════════════════════════════════════════════════════════════ SUPABASE (venues, anon read-only)
 const SUPABASE_URL = 'https://agbcscmgjtekhnhtqgnh.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_4cXC1Ff1Y6yvXrRpdU7Urg_st7ayfB-';
+const VENUES_CACHE_KEY = 'commons_venues_v1';
 let db = null;
 
 async function ensureDb() {
@@ -869,12 +870,21 @@ async function ensureDb() {
   db = createClient(SUPABASE_URL, SUPABASE_KEY);
 }
 
+function cacheVenues(list) {
+  try {
+    // strip user-specific fields before caching
+    localStorage.setItem(VENUES_CACHE_KEY, JSON.stringify(
+      list.map(v => ({ ...v, status: 'none', notes: '' }))
+    ));
+  } catch(e) {}
+}
+
 async function initVenues() {
   try {
     await ensureDb();
     const { data, error } = await db.from('venues').select('*').order('name');
     if (error) throw error;
-    return (data || []).map(v => ({
+    const list = (data || []).map(v => ({
       ...v,
       addedAt: new Date(v.added_at).getTime(),
       status: 'none',
@@ -883,8 +893,15 @@ async function initVenues() {
       website: v.website || '',
       hours: v.hours || '',
     }));
+    cacheVenues(list);
+    return list;
   } catch(e) {
     console.warn('venues: could not load from Supabase', e.message);
+    // fall back to localStorage cache, then SEED
+    try {
+      const cached = localStorage.getItem(VENUES_CACHE_KEY);
+      if (cached) return JSON.parse(cached);
+    } catch {}
     return SEED.map(v => ({ ...v, status: 'none' }));
   }
 }
@@ -1959,9 +1976,10 @@ async function checkForNewVenues() {
     btnBusy(btn, '↻ enriching');
     await enrichWikipedia(newVenues);
 
-    // ── Merge & save
+    // ── Merge & cache locally so new venues survive page reload
     venues.push(...newVenues);
     nextId = Math.max(...venues.map(v => v.id), 0) + 1;
+    cacheVenues(venues);
 
     renderAll();
 
