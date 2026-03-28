@@ -1868,7 +1868,7 @@ function osmTagsToVenue(el, idOffset) {
     osmId: el.id,
     name,
     type,
-    hood: '',          // filled by Nominatim pass
+    hood: t['addr:neighbourhood'] || t['addr:suburb'] || t['addr:quarter'] || t['addr:city_district'] || '',
     price,
     tags: rawTags.slice(0, 6),
     notes: [t.website ? `🌐 ${t.website}` : '', t.opening_hours ? `⏱ ${t.opening_hours}` : ''].filter(Boolean).join('\n'),
@@ -1968,11 +1968,7 @@ async function checkForNewVenues() {
       return;
     }
 
-    // ── Stage 2: Nominatim neighborhoods
-    btnBusy(btn, `↻ locating ${newVenues.length}`);
-    await enrichNeighborhoods(newVenues);
-
-    // ── Stage 3: Wikipedia
+    // ── Stage 2: Wikipedia
     btnBusy(btn, '↻ enriching');
     await enrichWikipedia(newVenues);
 
