@@ -1102,6 +1102,7 @@ const STOULT = (() => {
 const GOOGLE_CLIENT_ID = '829248142619-hvklu048j23gft4m0d5jeg8l1hjv2lid.apps.googleusercontent.com';
 const DRIVE_ROOT_KEY = 'stoult_drive_root';
 const COMMONS_BASE   = 'References/Commons';
+const VENUES_FILE    = `${COMMONS_BASE}/venues.json`;
 let storage = null;
 
 function slugify(name) {
@@ -1188,7 +1189,7 @@ async function initWithFSAL(handle) {
   storage = STOULT.FSALStorage;
   closeVaultModal();
   showConnected(handle.name);
-  await loadSaves();
+  await loadVaultData();
 }
 
 async function initWithDrive() {
@@ -1206,7 +1207,38 @@ async function initWithDrive() {
   storage = STOULT.DriveStorage;
   closeVaultModal();
   showConnected(user.email || user.name || 'google drive');
+  await loadVaultData();
+}
+
+// Load venues.json from vault (or seed it from Supabase), then load saves
+async function loadVaultData() {
+  if (!storage) return;
+  try {
+    const text = await storage.readFile(VENUES_FILE);
+    if (text) {
+      const saved = JSON.parse(text);
+      venues = saved.map(v => ({ ...v, status: 'none', notes: v.notes || '' }));
+      nextId = Math.max(...venues.map(v => v.id), 0) + 1;
+      renderAll();
+    } else {
+      // First connect — seed venues.json from the current Supabase-loaded list
+      await writeVenuesToVault();
+    }
+  } catch(e) {
+    console.error('loadVaultData:', e);
+  }
   await loadSaves();
+}
+
+async function writeVenuesToVault() {
+  if (!storage) return;
+  try {
+    // Strip user-specific status before writing; keep editorial notes
+    const data = venues.map(({ status, ...v }) => v);
+    await storage.writeFile(VENUES_FILE, JSON.stringify(data, null, 2));
+  } catch(e) {
+    console.error('writeVenuesToVault:', e);
+  }
 }
 
 async function pickLocalVault() {
@@ -1976,6 +2008,7 @@ async function checkForNewVenues() {
     venues.push(...newVenues);
     nextId = Math.max(...venues.map(v => v.id), 0) + 1;
     cacheVenues(venues);
+    await writeVenuesToVault();
 
     renderAll();
 
