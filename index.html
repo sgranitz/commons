@@ -556,20 +556,6 @@ header {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.email-input {
-  background: var(--bg2);
-  border: 1px dashed var(--border2);
-  border-radius: var(--radius);
-  color: var(--cream);
-  font-family: var(--mono);
-  font-size: 10px;
-  padding: 5px 9px;
-  outline: none;
-  width: 148px;
-  transition: border-color 0.14s;
-}
-.email-input:focus { border-color: var(--amber); border-style: solid; }
-.email-input::placeholder { color: var(--faint); }
 .auth-btn {
   background: none;
   border: 1px solid var(--border2);
@@ -604,6 +590,7 @@ header {
   text-transform: uppercase;
 }
 </style>
+<script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
 
@@ -615,13 +602,12 @@ header {
   </div>
   <div class="header-right">
     <div id="auth-out" style="display:flex;align-items:center;gap:6px">
-      <input class="email-input" id="emailInput" type="email" placeholder="email">
-      <button class="auth-btn" id="auth-send-btn" onclick="signInWithMagicLink()">sign in</button>
+      <button class="auth-btn" onclick="signInGoogle()">google drive</button>
     </div>
     <div id="auth-in" style="display:none;align-items:center;gap:8px">
       <div class="identity-pill">
         <div class="status-dot"></div>
-        <span id="auth-email" class="user-email-display"></span>
+        <span id="auth-name" class="user-email-display"></span>
       </div>
       <button class="auth-btn" onclick="signOut()">sign out</button>
     </div>
@@ -749,21 +735,15 @@ header {
 </footer>
 
 <script>
-// ══════════════════════════════════════════════════════════════ SUPABASE
-// SUPABASE_KEY is the publishable (anon) key — safe to expose in client-side
-// code ONLY when Row Level Security (RLS) is enabled on all tables.
-// Verify RLS is active: Supabase dashboard → Table Editor → each table → RLS enabled.
+// ══════════════════════════════════════════════════════════════ SUPABASE (venues, anon read-only)
 const SUPABASE_URL = 'https://agbcscmgjtekhnhtqgnh.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_4cXC1Ff1Y6yvXrRpdU7Urg_st7ayfB-';
 let db = null;
-let currentUser = null;
 
 async function ensureDb() {
   if (db) return;
   const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
-  db = createClient(SUPABASE_URL, SUPABASE_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-  });
+  db = createClient(SUPABASE_URL, SUPABASE_KEY);
 }
 
 async function initVenues() {
@@ -782,20 +762,225 @@ async function initVenues() {
     }));
   } catch(e) {
     console.warn('venues: could not load from Supabase', e.message);
-    return [];
+    return SEED.map(v => ({ ...v, status: 'none' }));
   }
 }
 
-async function initSupabase() {
-  await ensureDb();
-  await restoreSession();
-  bindAuthListener();
+// ── STOULT MODULE ─────────────────────────────────────────────────────────────
+const STOULT = (() => {
+  'use strict';
+  const DRIVE = 'https://www.googleapis.com/drive/v3';
+  const GTOKEN_KEY = 'stoult_gtoken', GTOKEN_EXP_KEY = 'stoult_gtoken_exp', GUSER_KEY = 'stoult_guser';
+  let _tokenClient = null, _token = null, _tokenExp = 0, _user = null;
+
+  async function initGoogle(clientId) {
+    if (!window.google?.accounts?.oauth2) return false;
+    _tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/drive email profile openid',
+      callback: () => {},
+    });
+    const storedToken = localStorage.getItem(GTOKEN_KEY);
+    const storedExp   = parseInt(localStorage.getItem(GTOKEN_EXP_KEY) || '0');
+    const storedUser  = localStorage.getItem(GUSER_KEY);
+    if (storedToken && storedExp > Date.now() + 60000 && storedUser) {
+      const parsedUser = JSON.parse(storedUser);
+      if (!parsedUser.email) {
+        localStorage.removeItem(GTOKEN_KEY); localStorage.removeItem(GTOKEN_EXP_KEY); localStorage.removeItem(GUSER_KEY);
+        return false;
+      }
+      _token = storedToken; _tokenExp = storedExp; _user = parsedUser;
+      return true;
+    }
+    return false;
+  }
+  function signIn() {
+    return new Promise((resolve, reject) => {
+      _tokenClient.callback = async (resp) => {
+        if (resp.error) { reject(new Error(resp.error)); return; }
+        _token = resp.access_token;
+        _tokenExp = Date.now() + (resp.expires_in || 3600) * 1000;
+        localStorage.setItem(GTOKEN_KEY, _token);
+        localStorage.setItem(GTOKEN_EXP_KEY, String(_tokenExp));
+        try {
+          const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${_token}` } });
+          _user = r.ok ? await r.json() : { name: 'Google User' };
+        } catch { _user = { name: 'Google User' }; }
+        localStorage.setItem(GUSER_KEY, JSON.stringify(_user));
+        resolve(_user);
+      };
+      _tokenClient.requestAccessToken();
+    });
+  }
+  function signOut() {
+    if (_token) { try { google.accounts.oauth2.revoke(_token, () => {}); } catch {} }
+    _token = null; _tokenExp = 0; _user = null;
+    localStorage.removeItem(GTOKEN_KEY); localStorage.removeItem(GTOKEN_EXP_KEY); localStorage.removeItem(GUSER_KEY);
+  }
+  function getUser() { return _user; }
+  async function getToken() {
+    if (_token && _tokenExp > Date.now() + 60000) return _token;
+    return new Promise((resolve, reject) => {
+      _tokenClient.callback = async (resp) => {
+        if (resp.error) { reject(new Error(resp.error)); return; }
+        _token = resp.access_token;
+        _tokenExp = Date.now() + (resp.expires_in || 3600) * 1000;
+        localStorage.setItem(GTOKEN_KEY, _token); localStorage.setItem(GTOKEN_EXP_KEY, String(_tokenExp));
+        resolve(_token);
+      };
+      _tokenClient.requestAccessToken({ prompt: '' });
+    });
+  }
+
+  async function dFetch(method, path, body, contentType) {
+    const token = await getToken();
+    const headers = { Authorization: `Bearer ${token}` };
+    if (contentType) headers['Content-Type'] = contentType;
+    const res = await fetch(`${DRIVE}${path}`, { method, headers, body: body !== undefined ? body : undefined });
+    if (res.status === 404) return null;
+    if (!res.ok) { const err = new Error(`Drive ${method} ${path} → ${res.status}`); err.status = res.status; throw err; }
+    if (res.status === 204) return null;
+    const ct = res.headers.get('content-type') || '';
+    return ct.includes('json') ? res.json() : res.text();
+  }
+
+  const DriveStorage = {
+    _rootId: null,
+    _ids: {},
+    init(rootFolderId) { this._rootId = rootFolderId; this._ids = {}; },
+    async _dir(folderPath) {
+      if (!folderPath) return this._rootId;
+      if (this._ids[folderPath]) return this._ids[folderPath];
+      const parts = folderPath.split('/').filter(Boolean);
+      let parentId = this._rootId, cur = '';
+      for (const name of parts) {
+        cur = cur ? `${cur}/${name}` : name;
+        if (this._ids[cur]) { parentId = this._ids[cur]; continue; }
+        const q = `name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+        const r = await dFetch('GET', `/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`);
+        let id = r?.files?.[0]?.id;
+        if (!id) {
+          const cr = await dFetch('POST', '/files?fields=id', JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }), 'application/json');
+          id = cr?.id;
+        }
+        if (!id) throw new Error(`Cannot find or create folder: ${cur}`);
+        this._ids[cur] = id; parentId = id;
+      }
+      return parentId;
+    },
+    async readFile(rel) {
+      if (!this._ids[rel]) {
+        const parts = rel.split('/'); const name = parts.pop();
+        const parentId = await this._dir(parts.join('/'));
+        const q = `name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and trashed=false`;
+        const r = await dFetch('GET', `/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`);
+        const id = r?.files?.[0]?.id;
+        if (!id) return null;
+        this._ids[rel] = id;
+      }
+      const token = await getToken();
+      const res = await fetch(`${DRIVE}/files/${this._ids[rel]}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
+      return res.ok ? res.text() : null;
+    },
+    async writeFile(rel, content) {
+      if (!this._ids[rel]) {
+        const parts = rel.split('/'); const name = parts.pop();
+        const parentId = await this._dir(parts.join('/'));
+        const q = `name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and trashed=false`;
+        const r = await dFetch('GET', `/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`);
+        const id = r?.files?.[0]?.id;
+        if (id) this._ids[rel] = id;
+      }
+      const token = await getToken();
+      if (this._ids[rel]) {
+        const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${this._ids[rel]}?uploadType=media`, {
+          method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'text/plain; charset=utf-8' }, body: content,
+        });
+        if (!r.ok) throw new Error(`Drive PATCH ${rel} → ${r.status}: ${await r.text()}`);
+      } else {
+        const parts = rel.split('/'); const name = parts.pop();
+        const parentId = await this._dir(parts.join('/'));
+        const meta = JSON.stringify({ name, parents: [parentId], mimeType: 'text/plain' });
+        const body = `--stoult_b\r\nContent-Type: application/json\r\n\r\n${meta}\r\n--stoult_b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${content}\r\n--stoult_b--`;
+        const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+          method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/related; boundary=stoult_b' }, body,
+        });
+        if (!r.ok) throw new Error(`Drive POST ${rel} → ${r.status}: ${await r.text()}`);
+        this._ids[rel] = (await r.json()).id;
+      }
+    },
+    async listFiles(rel) {
+      const folderId = await this._dir(rel);
+      const q = `'${folderId}' in parents and trashed=false`;
+      const r = await dFetch('GET', `/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType)&pageSize=1000`);
+      const files = r?.files || [];
+      for (const f of files) this._ids[rel ? `${rel}/${f.name}` : f.name] = f.id;
+      return files.map(f => ({ name: f.name }));
+    },
+    async deleteFile(rel) {
+      if (!this._ids[rel]) {
+        const parts = rel.split('/'); const name = parts.pop();
+        const parentId = await this._dir(parts.join('/'));
+        const q = `name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and trashed=false`;
+        const r = await dFetch('GET', `/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`);
+        const id = r?.files?.[0]?.id;
+        if (!id) return;
+        this._ids[rel] = id;
+      }
+      await dFetch('DELETE', `/files/${this._ids[rel]}`);
+      delete this._ids[rel];
+    },
+  };
+
+  return { initGoogle, signIn, signOut, getUser, getToken, DriveStorage };
+})();
+
+// ── GOOGLE AUTH + DRIVE SAVES ─────────────────────────────────────────────────
+const GOOGLE_CLIENT_ID = '829248142619-hvklu048j23gft4m0d5jeg8l1hjv2lid.apps.googleusercontent.com';
+const COMMONS_ROOT_KEY = 'stoult_commons_root';
+let storage = null;
+
+function slugify(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function parseFrontmatter(text) {
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const match = text.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const result = {};
+  for (const line of match[1].split('\n')) {
+    const m = line.match(/^(\w+):\s*(.*)$/);
+    if (m) result[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1') || null;
+  }
+  const bodyMatch = text.match(/^---\n[\s\S]*?\n---\n?([\s\S]*)$/);
+  result._body = bodyMatch ? bodyMatch[1].trim() : '';
+  return result;
+}
+
+function buildSaveFile(v) {
+  const date = new Date().toISOString().split('T')[0];
+  return `---\ntitle: "${v.name.replace(/"/g, '\\"')}"\nvenue_id: ${v.id}\nstatus: ${v.status}\nsaved: ${date}\n---\n${v.notes ? '\n' + v.notes.trim() + '\n' : ''}`;
+}
+
+function showToast(msg) {
+  let t = document.getElementById('commons-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'commons-toast';
+    t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius);padding:8px 14px;font-family:var(--mono);font-size:11px;color:var(--muted);z-index:9999;pointer-events:none;opacity:0;transition:opacity 0.3s';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.style.opacity = '0'; }, 2500);
 }
 
 function showSignedIn(user) {
   document.getElementById('auth-out').style.display = 'none';
   document.getElementById('auth-in').style.display  = 'flex';
-  document.getElementById('auth-email').textContent  = user.email;
+  document.getElementById('auth-name').textContent  = user.email || user.name || 'signed in';
 }
 
 function showSignedOut() {
@@ -803,115 +988,94 @@ function showSignedOut() {
   document.getElementById('auth-out').style.display = 'flex';
 }
 
-async function signInWithMagicLink() {
-  const email = document.getElementById('emailInput').value.trim();
-  if (!email) return;
-  const btn = document.getElementById('auth-send-btn');
-  btn.textContent = 'sending…';
-  btn.disabled = true;
-  try {
-    const { error } = await db.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.href, shouldCreateUser: true }
-    });
-    btn.textContent = error ? 'error — retry' : 'check email ✓';
-  } catch(e) {
-    btn.textContent = 'error — retry';
+async function initAuth() {
+  const hasSession = await STOULT.initGoogle(GOOGLE_CLIENT_ID);
+  if (hasSession) {
+    showSignedIn(STOULT.getUser());
+    await connectDrive();
   }
-  btn.disabled = false;
-  setTimeout(() => { btn.textContent = 'sign in'; }, 4000);
+}
+
+async function signInGoogle() {
+  try {
+    await STOULT.initGoogle(GOOGLE_CLIENT_ID);
+    const user = await STOULT.signIn();
+    showSignedIn(user);
+    await connectDrive();
+  } catch(e) { console.error('sign-in failed', e); showToast('sign-in failed'); }
 }
 
 async function signOut() {
-  if (!db) return;
-  await db.auth.signOut();
-}
-
-async function restoreSession() {
-  const { data } = await db.auth.getSession();
-  currentUser = data.session?.user ?? null;
-  if (currentUser) {
-    showSignedIn(currentUser);
-    await migrateLocalStorage();
-    await loadSaves();
-  } else {
-    showSignedOut();
-  }
-}
-
-function bindAuthListener() {
-  db.auth.onAuthStateChange(async (event, session) => {
-    currentUser = session?.user ?? null;
-    if (currentUser) {
-      showSignedIn(currentUser);
-      if (event === 'SIGNED_IN') {
-        await migrateLocalStorage();
-        await loadSaves();
-      }
-    } else {
-      showSignedOut();
-      venues = loadVenues();
-      renderAll();
-      renderList();
-    }
-  });
-}
-
-async function loadSaves() {
-  if (!db || !currentUser) return;
-  const { data, error } = await db.from('venue_saves').select('venue_id,status,notes');
-  if (error) { console.error('loadSaves:', error); return; }
-  data.forEach(s => {
-    const v = venues.find(x => x.id === s.venue_id);
-    if (v) { v.status = s.status; v.notes = s.notes; }
-  });
+  STOULT.signOut();
+  storage = null;
+  localStorage.removeItem(COMMONS_ROOT_KEY);
+  venues.forEach(v => { v.status = 'none'; v.notes = ''; });
+  showSignedOut();
   renderAll();
   renderList();
 }
 
-async function persistSave(venueId) {
-  if (!db || !currentUser) return;
-  const v = venues.find(x => x.id === venueId);
-  if (!v) return;
-  const { error } = await db.from('venue_saves').upsert({
-    user_id: currentUser.id,
-    venue_id: venueId,
-    status: v.status,
-    notes: v.notes || '',
-    updated_at: new Date().toISOString()
-  }, { onConflict: 'user_id,venue_id' });
-  if (error) console.error('persistSave:', error);
+async function connectDrive() {
+  try {
+    let rootId = localStorage.getItem(COMMONS_ROOT_KEY);
+    if (!rootId) {
+      const token = await STOULT.getToken();
+      const q = `name='Commons' and 'root' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.files?.length) {
+        rootId = data.files[0].id;
+      } else {
+        const cr = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'Commons', mimeType: 'application/vnd.google-apps.folder' }),
+        });
+        rootId = (await cr.json()).id;
+      }
+      localStorage.setItem(COMMONS_ROOT_KEY, rootId);
+    }
+    STOULT.DriveStorage.init(rootId);
+    storage = STOULT.DriveStorage;
+    await loadSaves();
+  } catch(e) { console.error('connectDrive:', e); showToast('could not connect to drive'); }
 }
 
-async function migrateLocalStorage() {
-  if (!db || !currentUser) return;
-  const migKey = STORAGE_KEY + '_mig_' + currentUser.id;
-  if (localStorage.getItem(migKey)) return;
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) { localStorage.setItem(migKey, '1'); return; }
+async function loadSaves() {
+  if (!storage) return;
   try {
-    const stored = JSON.parse(raw);
-    const rows = stored
-      .filter(v => (v.status && v.status !== 'none') || v.notes)
-      .map(v => ({
-        user_id: currentUser.id,
-        venue_id: v.id,
-        status: v.status || 'none',
-        notes: v.notes || '',
-        updated_at: new Date().toISOString()
-      }));
-    if (rows.length) {
-      const { error } = await db.from('venue_saves')
-        .upsert(rows, { onConflict: 'user_id,venue_id', ignoreDuplicates: true });
-      if (error) { console.error('migration:', error); return; }
-      console.log(`migrated ${rows.length} venue saves from localStorage`);
-    }
-    localStorage.setItem(migKey, '1');
-  } catch(e) { console.error('migration parse error:', e); }
+    const files = await storage.listFiles('');
+    await Promise.all(
+      files.filter(f => f.name.endsWith('.md')).map(async f => {
+        const text = await storage.readFile(f.name);
+        if (!text) return;
+        const fm = parseFrontmatter(text);
+        if (!fm?.venue_id) return;
+        const vid = parseInt(fm.venue_id);
+        const v = venues.find(x => x.id === vid);
+        if (v) { v.status = fm.status || 'none'; v.notes = fm._body || ''; }
+      })
+    );
+    renderAll();
+    renderList();
+  } catch(e) { console.error('loadSaves:', e); }
+}
+
+async function persistSave(venueId) {
+  if (!storage) return;
+  const v = venues.find(x => x.id === venueId);
+  if (!v) return;
+  const slug = slugify(v.name);
+  if (v.status === 'none' && !v.notes) {
+    try { await storage.deleteFile(`${slug}.md`); } catch {}
+    return;
+  }
+  try { await storage.writeFile(`${slug}.md`, buildSaveFile(v)); } catch(e) { console.error('persistSave:', e); }
 }
 
 // ══════════════════════════════════════════════════════════════ DATA
-const STORAGE_KEY = 'the-commons-v2';
 const CITY = { name: 'Portland', state: 'OR', label: 'portland, or', lat: 45.528, lng: -122.658 };
 const NEW_DAYS = 14; // venues added within this many days show as "new"
 const NOW = Date.now();
@@ -965,25 +1129,6 @@ const TYPE_HEX = { restaurant:'#8b3a2a', brewery:'#2a5a7a', bar:'#3a6645' };
 
 function isNew(v) { return v.addedAt && (NOW - v.addedAt) < NEW_DAYS * DAY; }
 
-function loadVenues() {
-  try {
-    const r = localStorage.getItem(STORAGE_KEY);
-    if (r) {
-      const stored = JSON.parse(r);
-      // Merge any new SEED venues not yet in storage, preserve addedAt
-      const storedIds = new Set(stored.map(v => v.id));
-      const merged = stored.map(v => {
-        const seed = SEED.find(s => s.id === v.id);
-        return seed ? { ...v, addedAt: seed.addedAt, lat: seed.lat, lng: seed.lng } : v;
-      });
-      SEED.forEach(s => { if (!storedIds.has(s.id)) merged.push({ ...s, status: 'none' }); });
-      return merged;
-    }
-  } catch(e) {}
-  const d = SEED.map(v => ({ ...v, status:'none' }));
-  saveVenues(d); return d;
-}
-function saveVenues(v) { localStorage.setItem(STORAGE_KEY, JSON.stringify(v)); }
 
 let venues = [];
 let nextId = 1;
@@ -1124,8 +1269,8 @@ function buildPopupHtml(v) {
 function popupToggle(id, status) {
   const v = venues.find(x => x.id === id);
   if (!v) return;
+  if (!storage) { showToast('sign in with google drive to save places'); return; }
   v.status = v.status === status ? 'none' : status;
-  saveVenues(venues);
   persistSave(id);
   // refresh marker icon + popup
   const m = leafletMarkers[id];
@@ -1277,8 +1422,8 @@ function updateCardSentinel() {
 function quickStatus(id, status) {
   const v = venues.find(x => x.id === id);
   if (!v) return;
+  if (!storage) { showToast('sign in with google drive to save places'); return; }
   v.status = v.status === status ? 'none' : status;
-  saveVenues(venues);
   persistSave(id);
   renderMapMarkers();
   renderCards();
@@ -1334,7 +1479,7 @@ function listRowHtml(v) {
 
 function removeFromList(id) {
   const v = venues.find(x => x.id === id);
-  if (v) { v.status = 'none'; saveVenues(venues); persistSave(id); renderAll(); renderList(); }
+  if (v) { v.status = 'none'; if (storage) persistSave(id); renderAll(); renderList(); }
 }
 
 // ══════════════════════════════════════════════════════════════ PICKER
@@ -1610,30 +1755,6 @@ async function checkForNewVenues() {
     venues.push(...newVenues);
     nextId = Math.max(...venues.map(v => v.id), 0) + 1;
 
-    // Upsert to Supabase so all users get the new venues
-    if (db && currentUser) {
-      const rows = newVenues.map(v => ({
-        id: v.id,
-        osm_id: v.osmId || null,
-        name: v.name,
-        type: v.type,
-        hood: v.hood,
-        price: v.price,
-        tags: v.tags,
-        notes: v.notes || '',
-        website: v.website || '',
-        hours: v.hours || '',
-        lat: v.lat,
-        lng: v.lng,
-        added_at: new Date(v.addedAt).toISOString(),
-        source: 'osm',
-        updated_at: new Date().toISOString(),
-      }));
-      const { error: upsertErr } = await db.from('venues').upsert(rows, { onConflict: 'id' });
-      if (upsertErr) console.error('venues upsert:', upsertErr);
-    }
-
-    saveVenues(venues); // local cache
     renderAll();
 
     btnDone(btn, `↻ +${newVenues.length} added`, 3500);
@@ -1688,7 +1809,7 @@ function detSetStatus(s) {
 
 function saveDetail() {
   const v = venues.find(x => x.id === detailId);
-  if (v) { v.notes = document.getElementById('det-notes').value; saveVenues(venues); persistSave(detailId); renderAll(); renderList(); }
+  if (v) { v.notes = document.getElementById('det-notes').value; if (storage) persistSave(detailId); renderAll(); renderList(); }
   closeOverlay();
 }
 
@@ -1713,7 +1834,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   nextId = Math.max(...venues.map(v => v.id), 0) + 1;
   initMap();
   renderCards();
-  initSupabase(); // loads auth + overlays user saves in background
+  initAuth(); // loads google auth + overlays user saves in background
 });
 </script>
 </body>
