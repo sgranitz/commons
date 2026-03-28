@@ -832,7 +832,7 @@ header {
     </div>
     <div id="vaultPathRow" style="display:none; margin-top:16px;">
       <div class="vault-copy">signed in. enter the name of your vault folder in google drive.</div>
-      <input class="vault-input" id="vaultPathInput" placeholder="e.g. seg">
+      <input class="vault-input" id="vaultPathInput" placeholder="e.g. MyVault">
       <button class="vault-modal-btn" onclick="confirmVaultPath()">connect</button>
     </div>
   </div>
@@ -1628,7 +1628,13 @@ function quickStatus(id, status) {
   v.status = v.status === status ? 'none' : status;
   persistSave(id);
   renderMapMarkers();
-  renderCards();
+  // patch only this card's buttons in-place to avoid full grid re-render
+  const card = document.querySelector(`.venue-card[data-id="${id}"]`);
+  if (card) {
+    const btns = card.querySelectorAll('.action-btn');
+    btns[0].className = `action-btn ${v.status === 'want'    ? 'want-active'  : ''}`;
+    btns[1].className = `action-btn ${v.status === 'visited' ? 'visit-active' : ''}`;
+  }
 }
 
 function renderAll() {
