@@ -572,6 +572,98 @@ header {
 }
 .auth-btn:hover { border-color: var(--amber); color: var(--amber); }
 
+/* ── VAULT MODAL ── */
+.vault-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 800;
+  align-items: center;
+  justify-content: center;
+}
+.vault-modal.open { display: flex; }
+.vault-modal-inner {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 24px;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  position: relative;
+}
+.vault-modal-title {
+  font-family: var(--serif);
+  font-size: 17px;
+  color: var(--cream);
+  margin-bottom: 4px;
+}
+.vault-modal-desc {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+.vault-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 480px) { .vault-options { grid-template-columns: 1fr; } }
+.vault-option {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.vault-option:hover { border-color: var(--border2); }
+.vault-option-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+.vault-option-title {
+  font-size: 13px;
+  color: var(--cream);
+  margin-bottom: 6px;
+}
+.vault-modal-btn {
+  background: var(--amber);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius);
+  padding: 7px 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.vault-modal-btn:hover { background: #d4b87e; }
+.vault-modal-close {
+  position: absolute;
+  top: 10px; right: 14px;
+  background: none; border: none;
+  color: var(--muted); font-size: 20px;
+  cursor: pointer; line-height: 1;
+}
+.vault-input {
+  background: var(--bg2);
+  border: 1px dashed var(--border2);
+  border-radius: var(--radius);
+  color: var(--cream);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 7px 10px;
+  width: 100%;
+  outline: none;
+  margin-bottom: 8px;
+}
+.vault-input:focus { border-color: var(--amber); border-style: solid; }
+.vault-copy { font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 12px; }
+
 .tool-footer {
   display: flex;
   align-items: center;
@@ -602,7 +694,7 @@ header {
   </div>
   <div class="header-right">
     <div id="auth-out" style="display:flex;align-items:center;gap:6px">
-      <button class="auth-btn" onclick="signInGoogle()">google drive</button>
+      <button class="auth-btn" onclick="openVaultModal()">connect vault</button>
     </div>
     <div id="auth-in" style="display:none;align-items:center;gap:8px">
       <div class="identity-pill">
@@ -715,6 +807,37 @@ header {
 </div>
 
 <!-- DETAIL OVERLAY -->
+<div class="vault-modal" id="vaultModal" onclick="maybeCloseVaultModal(event)">
+  <div class="vault-modal-inner">
+    <button class="vault-modal-close" onclick="closeVaultModal()">×</button>
+    <div class="vault-modal-title">connect vault</div>
+    <div class="vault-modal-desc">your saves are stored as .md files inside your vault's References/Commons folder</div>
+    <div id="vaultSetupOptions">
+      <div class="vault-options">
+        <div class="vault-option">
+          <div class="vault-option-label">this device only</div>
+          <div class="vault-option-title">local folder</div>
+          <button class="vault-modal-btn" onclick="pickLocalVault()">pick folder</button>
+        </div>
+        <div class="vault-option" id="vaultGoogleOption">
+          <div class="vault-option-label">any device</div>
+          <div class="vault-option-title">google drive</div>
+          <button class="vault-modal-btn" onclick="signInGoogle()">sign in</button>
+        </div>
+      </div>
+    </div>
+    <div id="vaultReconnectRow" style="display:none; margin-top:14px;">
+      <div class="vault-copy">your vault was previously connected — tap to reconnect.</div>
+      <button class="vault-modal-btn" onclick="reconnectVault()">reconnect vault</button>
+    </div>
+    <div id="vaultPathRow" style="display:none; margin-top:16px;">
+      <div class="vault-copy">signed in. enter the name of your vault folder in google drive.</div>
+      <input class="vault-input" id="vaultPathInput" placeholder="e.g. seg">
+      <button class="vault-modal-btn" onclick="confirmVaultPath()">connect</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="overlay" onclick="maybeCloseOverlay(event)">
   <div class="detail-panel">
     <button class="close-btn" onclick="closeOverlay()">×</button>
@@ -770,6 +893,7 @@ async function initVenues() {
 const STOULT = (() => {
   'use strict';
   const DRIVE = 'https://www.googleapis.com/drive/v3';
+  const IDB_DB = 'stoult', IDB_STORE = 'handles', IDB_KEY = 'vault';
   const GTOKEN_KEY = 'stoult_gtoken', GTOKEN_EXP_KEY = 'stoult_gtoken_exp', GUSER_KEY = 'stoult_guser';
   let _tokenClient = null, _token = null, _tokenExp = 0, _user = null;
 
@@ -932,12 +1056,35 @@ const STOULT = (() => {
     },
   };
 
-  return { initGoogle, signIn, signOut, getUser, getToken, DriveStorage };
+  const FSALStorage = {
+    _root: null,
+    async init(h) { this._root = h; await _saveHandle(h); },
+    async _traverse(rel, create = false) {
+      const parts = rel.split('/').filter(Boolean); let node = this._root;
+      for (let i = 0; i < parts.length; i++) {
+        const p = parts[i], isLast = i === parts.length - 1, isFile = isLast && p.includes('.');
+        node = isFile ? await node.getFileHandle(p, { create }) : await node.getDirectoryHandle(p, { create });
+      }
+      return node;
+    },
+    async readFile(rel)     { try { const fh = await this._traverse(rel); return (await fh.getFile()).text(); } catch { return null; } },
+    async writeFile(rel, c) { const fh = await this._traverse(rel, true); const w = await fh.createWritable(); await w.write(c); await w.close(); },
+    async listFiles(rel)    { try { const dir = await this._traverse(rel); const out = []; for await (const [name, h] of dir.entries()) out.push({ name, file: h.kind === 'file' || undefined }); return out; } catch { return []; } },
+    async deleteFile(rel)   { const parts = rel.split('/').filter(Boolean); const name = parts.pop(); const dir = await this._traverse(parts.join('/')); await dir.removeEntry(name); },
+  };
+
+  function _openIDB() { return new Promise((res, rej) => { const req = indexedDB.open(IDB_DB, 1); req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE); req.onsuccess = e => res(e.target.result); req.onerror = e => rej(e.target.error); }); }
+  async function _saveHandle(h) { const db = await _openIDB(); await new Promise((res, rej) => { const tx = db.transaction(IDB_STORE, 'readwrite'); tx.objectStore(IDB_STORE).put(h, IDB_KEY); tx.oncomplete = res; tx.onerror = rej; }); }
+  async function loadHandle() { try { const db = await _openIDB(); return new Promise((res, rej) => { const tx = db.transaction(IDB_STORE, 'readonly'); const req = tx.objectStore(IDB_STORE).get(IDB_KEY); req.onsuccess = e => res(e.target.result || null); req.onerror = rej; }); } catch { return null; } }
+  async function clearHandle() { try { const db = await _openIDB(); await new Promise((res, rej) => { const tx = db.transaction(IDB_STORE, 'readwrite'); tx.objectStore(IDB_STORE).delete(IDB_KEY); tx.oncomplete = res; tx.onerror = rej; }); } catch {} }
+
+  return { initGoogle, signIn, signOut, getUser, getToken, DriveStorage, FSALStorage, loadHandle, clearHandle };
 })();
 
-// ── GOOGLE AUTH + DRIVE SAVES ─────────────────────────────────────────────────
+// ── GOOGLE AUTH + VAULT SAVES ─────────────────────────────────────────────────
 const GOOGLE_CLIENT_ID = '829248142619-hvklu048j23gft4m0d5jeg8l1hjv2lid.apps.googleusercontent.com';
-const COMMONS_ROOT_KEY = 'stoult_commons_root';
+const DRIVE_ROOT_KEY = 'stoult_drive_root';
+const COMMONS_BASE   = 'References/Commons';
 let storage = null;
 
 function slugify(name) {
@@ -977,79 +1124,133 @@ function showToast(msg) {
   t._timer = setTimeout(() => { t.style.opacity = '0'; }, 2500);
 }
 
-function showSignedIn(user) {
+function showConnected(label) {
   document.getElementById('auth-out').style.display = 'none';
   document.getElementById('auth-in').style.display  = 'flex';
-  document.getElementById('auth-name').textContent  = user.email || user.name || 'signed in';
+  document.getElementById('auth-name').textContent  = label;
 }
 
-function showSignedOut() {
+function showDisconnected() {
   document.getElementById('auth-in').style.display  = 'none';
   document.getElementById('auth-out').style.display = 'flex';
 }
 
+// ── Vault modal ──
+function openVaultModal() {
+  document.getElementById('vaultSetupOptions').style.display = '';
+  document.getElementById('vaultReconnectRow').style.display = 'none';
+  document.getElementById('vaultPathRow').style.display      = 'none';
+  document.getElementById('vaultModal').classList.add('open');
+}
+function closeVaultModal() { document.getElementById('vaultModal').classList.remove('open'); }
+function maybeCloseVaultModal(e) { if (e.target === document.getElementById('vaultModal')) closeVaultModal(); }
+
+// ── Init ──
 async function initAuth() {
-  const hasSession = await STOULT.initGoogle(GOOGLE_CLIENT_ID);
-  if (hasSession) {
-    showSignedIn(STOULT.getUser());
-    await connectDrive();
+  // 1. Try restoring FSAL handle (desktop/local)
+  const handle = await STOULT.loadHandle();
+  if (handle) {
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm === 'granted') { return initWithFSAL(handle); }
+    if (perm === 'prompt')  {
+      window._pendingHandle = handle;
+      document.getElementById('vaultSetupOptions').style.display = 'none';
+      document.getElementById('vaultReconnectRow').style.display = '';
+      document.getElementById('vaultPathRow').style.display      = 'none';
+      document.getElementById('vaultModal').classList.add('open');
+      return;
+    }
   }
+  // 2. Try Google silent auth
+  const hasSession = await STOULT.initGoogle(GOOGLE_CLIENT_ID);
+  if (hasSession) { return initWithDrive(); }
+}
+
+async function initWithFSAL(handle) {
+  await STOULT.FSALStorage.init(handle);
+  storage = STOULT.FSALStorage;
+  closeVaultModal();
+  showConnected(handle.name);
+  await loadSaves();
+}
+
+async function initWithDrive() {
+  const user = STOULT.getUser();
+  if (!user) return;
+  const rootId = localStorage.getItem(DRIVE_ROOT_KEY);
+  if (!rootId) {
+    document.getElementById('vaultSetupOptions').style.display = 'none';
+    document.getElementById('vaultReconnectRow').style.display = 'none';
+    document.getElementById('vaultPathRow').style.display      = '';
+    document.getElementById('vaultModal').classList.add('open');
+    return;
+  }
+  STOULT.DriveStorage.init(rootId);
+  storage = STOULT.DriveStorage;
+  closeVaultModal();
+  showConnected(user.email || user.name || 'google drive');
+  await loadSaves();
+}
+
+async function pickLocalVault() {
+  if (!window.showDirectoryPicker) { showToast('folder picker not supported on this browser'); return; }
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await initWithFSAL(handle);
+  } catch(e) { if (e.name !== 'AbortError') showToast('could not open folder'); }
+}
+
+async function reconnectVault() {
+  const handle = window._pendingHandle;
+  const result = await handle.requestPermission({ mode: 'readwrite' });
+  if (result !== 'granted') { showToast('vault access denied'); return; }
+  await initWithFSAL(handle);
 }
 
 async function signInGoogle() {
   try {
     await STOULT.initGoogle(GOOGLE_CLIENT_ID);
-    const user = await STOULT.signIn();
-    showSignedIn(user);
-    await connectDrive();
-  } catch(e) { console.error('sign-in failed', e); showToast('sign-in failed'); }
+    await STOULT.signIn();
+    document.getElementById('vaultSetupOptions').style.display = 'none';
+    document.getElementById('vaultReconnectRow').style.display = 'none';
+    document.getElementById('vaultPathRow').style.display      = '';
+  } catch(e) { showToast('sign-in failed'); console.error(e); }
+}
+
+async function confirmVaultPath() {
+  const name = document.getElementById('vaultPathInput').value.trim();
+  if (!name) return;
+  try {
+    const token = await STOULT.getToken();
+    const q = `name='${name}' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`;
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (!data.files?.length) { showToast(`folder "${name}" not found in drive`); return; }
+    localStorage.setItem(DRIVE_ROOT_KEY, data.files[0].id);
+    await initWithDrive();
+  } catch(e) { showToast('could not connect to drive'); console.error(e); }
 }
 
 async function signOut() {
   STOULT.signOut();
+  await STOULT.clearHandle();
+  localStorage.removeItem(DRIVE_ROOT_KEY);
   storage = null;
-  localStorage.removeItem(COMMONS_ROOT_KEY);
   venues.forEach(v => { v.status = 'none'; v.notes = ''; });
-  showSignedOut();
+  showDisconnected();
   renderAll();
   renderList();
-}
-
-async function connectDrive() {
-  try {
-    let rootId = localStorage.getItem(COMMONS_ROOT_KEY);
-    if (!rootId) {
-      const token = await STOULT.getToken();
-      const q = `name='Commons' and 'root' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data.files?.length) {
-        rootId = data.files[0].id;
-      } else {
-        const cr = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: 'Commons', mimeType: 'application/vnd.google-apps.folder' }),
-        });
-        rootId = (await cr.json()).id;
-      }
-      localStorage.setItem(COMMONS_ROOT_KEY, rootId);
-    }
-    STOULT.DriveStorage.init(rootId);
-    storage = STOULT.DriveStorage;
-    await loadSaves();
-  } catch(e) { console.error('connectDrive:', e); showToast('could not connect to drive'); }
 }
 
 async function loadSaves() {
   if (!storage) return;
   try {
-    const files = await storage.listFiles('');
+    const files = await storage.listFiles(COMMONS_BASE);
     await Promise.all(
       files.filter(f => f.name.endsWith('.md')).map(async f => {
-        const text = await storage.readFile(f.name);
+        const text = await storage.readFile(`${COMMONS_BASE}/${f.name}`);
         if (!text) return;
         const fm = parseFrontmatter(text);
         if (!fm?.venue_id) return;
@@ -1068,11 +1269,12 @@ async function persistSave(venueId) {
   const v = venues.find(x => x.id === venueId);
   if (!v) return;
   const slug = slugify(v.name);
+  const path = `${COMMONS_BASE}/${slug}.md`;
   if (v.status === 'none' && !v.notes) {
-    try { await storage.deleteFile(`${slug}.md`); } catch {}
+    try { await storage.deleteFile(path); } catch {}
     return;
   }
-  try { await storage.writeFile(`${slug}.md`, buildSaveFile(v)); } catch(e) { console.error('persistSave:', e); }
+  try { await storage.writeFile(path, buildSaveFile(v)); } catch(e) { console.error('persistSave:', e); }
 }
 
 // ══════════════════════════════════════════════════════════════ DATA
