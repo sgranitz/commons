@@ -932,7 +932,7 @@ const STOULT = (() => {
       }
       _token = storedToken; _tokenExp = storedExp; _user = parsedUser;
       return true;
-    }
+    },
     // Token expired but user is known — try silent refresh before showing gate
     if (storedUser) {
       try {
@@ -1088,8 +1088,14 @@ const STOULT = (() => {
     async listFiles(rel) {
       const folderId = await this._dir(rel);
       const q = `'${folderId}' in parents and trashed=false`;
-      const r = await dFetch('GET', `/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType)&pageSize=1000`);
-      const files = r?.files || [];
+      const files = [];
+      let pageToken = '';
+      do {
+        const tokenParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
+        const r = await dFetch('GET', `/files?q=${encodeURIComponent(q)}&fields=nextPageToken,files(id,name,mimeType)&pageSize=1000${tokenParam}`);
+        files.push(...(r?.files || []));
+        pageToken = r?.nextPageToken || '';
+      } while (pageToken);
       for (const f of files) this._ids[rel ? `${rel}/${f.name}` : f.name] = f.id;
       return files.map(f => ({ name: f.name, file: f.mimeType !== 'application/vnd.google-apps.folder' ? true : undefined }));
     },
@@ -1198,6 +1204,26 @@ function showToast(msg) {
   t.style.opacity = '1';
   clearTimeout(t._timer);
   t._timer = setTimeout(() => { t.style.opacity = '0'; }, 2500);
+}
+
+function h(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeHttpUrl(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+  } catch {
+    return '';
+  }
 }
 
 function showConnected(label) {
@@ -1559,14 +1585,15 @@ function makeIcon(v, dimmed, highlighted) {
 function buildPopupHtml(v) {
   const wActive  = v.status === 'want'    ? 'active-want'  : '';
   const viActive = v.status === 'visited' ? 'active-visit' : '';
+  const typeColor = TYPE_HEX[v.type] || 'var(--faint)';
   return `
     <div class="popup-inner">
-      <div class="popup-name">${v.name}</div>
+      <div class="popup-name">${h(v.name)}</div>
       <div class="popup-meta">
-        <span class="popup-dot" style="background:${TYPE_HEX[v.type]}"></span>
-        ${v.type} · ${v.hood} · ${v.price}
+        <span class="popup-dot" style="background:${typeColor}"></span>
+        ${h(v.type)} · ${h(v.hood)} · ${h(v.price)}
       </div>
-      <div class="popup-tags">${v.tags.slice(0,4).map(t=>`<span class="popup-tag">${t}</span>`).join('')}</div>
+      <div class="popup-tags">${v.tags.slice(0,4).map(t=>`<span class="popup-tag">${h(t)}</span>`).join('')}</div>
     </div>
     <div class="popup-actions">
       <button class="popup-btn ${wActive}"  onclick="popupToggle(${v.id},'want')">+ want</button>
@@ -1656,17 +1683,18 @@ function unhighlightVenue() {
 
 // ══════════════════════════════════════════════════════════════ CARDS
 function venueCardHtml(v) {
+  const typeColor = TYPE_HEX[v.type] || 'var(--faint)';
   return `
     <div class="venue-card" data-id="${v.id}" onclick="openDetail(${v.id})" onmouseenter="highlightVenue(${v.id})" onmouseleave="unhighlightVenue()">
       <div class="card-top">
-        <div class="card-name">${v.name}${isNew(v) ? '<span class="new-badge">new</span>' : ''}</div>
-        <div class="card-price">${v.price}</div>
+        <div class="card-name">${h(v.name)}${isNew(v) ? '<span class="new-badge">new</span>' : ''}</div>
+        <div class="card-price">${h(v.price)}</div>
       </div>
       <div class="card-sub">
-        <span class="card-sub-dot" style="background:${TYPE_HEX[v.type]}"></span>
-        ${v.type} · ${v.hood}
+        <span class="card-sub-dot" style="background:${typeColor}"></span>
+        ${h(v.type)} · ${h(v.hood)}
       </div>
-      <div class="card-tags">${v.tags.slice(0,3).map(t=>`<span class="card-tag">${t}</span>`).join('')}</div>
+      <div class="card-tags">${v.tags.slice(0,3).map(t=>`<span class="card-tag">${h(t)}</span>`).join('')}</div>
       <div class="card-actions" onclick="event.stopPropagation()">
         <button class="action-btn ${v.status==='want'?'want-active':''}"    onclick="quickStatus(${v.id},'want')">+ want to go</button>
         <button class="action-btn ${v.status==='visited'?'visit-active':''}" onclick="quickStatus(${v.id},'visited')">✓ visited</button>
@@ -1783,11 +1811,12 @@ function renderList(search = '') {
 }
 
 function listRowHtml(v) {
+  const typeColor = TYPE_HEX[v.type] || 'var(--faint)';
   return `<div class="list-row" onclick="openDetail(${v.id})">
-    <div class="list-dot" style="background:${TYPE_HEX[v.type]}"></div>
-    <div class="list-name">${v.name}</div>
-    <div class="list-meta">${v.hood}</div>
-    <div class="list-price">${v.price}</div>
+    <div class="list-dot" style="background:${typeColor}"></div>
+    <div class="list-name">${h(v.name)}</div>
+    <div class="list-meta">${h(v.hood)}</div>
+    <div class="list-price">${h(v.price)}</div>
     <button class="list-remove" onclick="event.stopPropagation();removeFromList(${v.id})">×</button>
   </div>`;
 }
@@ -1853,10 +1882,10 @@ function runPicker() {
   if (!results.length) { c.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:10px 0">${emptyMsg}</div>`; return; }
   c.innerHTML = results.map(v => `
     <div class="pick-card" onclick="openDetail(${v.id})">
-      <div class="pick-dot" style="background:${TYPE_HEX[v.type]}"></div>
+      <div class="pick-dot" style="background:${TYPE_HEX[v.type] || 'var(--faint)'}"></div>
       <div>
-        <div class="pick-name">${v.name}${isNew(v) ? '<span class="new-badge" style="font-size:7px;padding:1px 4px">new</span>' : ''}</div>
-        <span class="pick-sub">${v.type} · ${v.hood} · ${v.price} · ${v.tags.slice(0,2).join(', ')}</span>
+        <div class="pick-name">${h(v.name)}${isNew(v) ? '<span class="new-badge" style="font-size:7px;padding:1px 4px">new</span>' : ''}</div>
+        <span class="pick-sub">${h(v.type)} · ${h(v.hood)} · ${h(v.price)} · ${h(v.tags.slice(0,2).join(', '))}</span>
       </div>
     </div>`).join('');
 }
@@ -2085,22 +2114,23 @@ function openDetail(id) {
   detailId = id;
   const v = venues.find(x => x.id === id);
   if (!v) return;
+  const websiteUrl = safeHttpUrl(v.website);
   const extraFields = [
-    v.website ? `<div class="detail-section">website</div><div style="font-size:11px;color:var(--amber);word-break:break-all"><a href="${v.website}" target="_blank" style="color:var(--amber)">${v.website}</a></div>` : '',
-    v.hours   ? `<div class="detail-section">hours</div><div style="font-size:11px;color:var(--muted);line-height:1.5">${v.hours.replace(/;/g,'<br>')}</div>` : '',
+    v.website ? `<div class="detail-section">website</div><div style="font-size:11px;color:var(--amber);word-break:break-all">${websiteUrl ? `<a href="${h(websiteUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--amber)">${h(v.website)}</a>` : h(v.website)}</div>` : '',
+    v.hours   ? `<div class="detail-section">hours</div><div style="font-size:11px;color:var(--muted);line-height:1.5">${String(v.hours).split(';').map(part => h(part.trim())).filter(Boolean).join('<br>')}</div>` : '',
   ].filter(Boolean).join('');
 
   document.getElementById('detail-content').innerHTML = `
-    <div class="detail-name">${v.name}</div>
+    <div class="detail-name">${h(v.name)}</div>
     <div class="detail-type">
-      <div class="detail-type-dot" style="background:${TYPE_HEX[v.type]}"></div>
-      ${v.type} · ${v.hood || 'portland'} · ${v.price}
+      <div class="detail-type-dot" style="background:${TYPE_HEX[v.type] || 'var(--faint)'}"></div>
+      ${h(v.type)} · ${h(v.hood || 'portland')} · ${h(v.price)}
     </div>
     <div class="detail-section">tags</div>
-    <div class="detail-tags">${v.tags.length ? v.tags.map(t=>`<span class="detail-tag">${t}</span>`).join('') : '<span style="color:var(--muted);font-size:11px">none</span>'}</div>
+    <div class="detail-tags">${v.tags.length ? v.tags.map(t=>`<span class="detail-tag">${h(t)}</span>`).join('') : '<span style="color:var(--muted);font-size:11px">none</span>'}</div>
     ${extraFields}
     <div class="detail-section">notes</div>
-    <textarea class="detail-notes" id="det-notes">${v.notes}</textarea>
+    <textarea class="detail-notes" id="det-notes">${h(v.notes)}</textarea>
     <div class="detail-actions">
       <button class="det-btn ${v.status==='want'?'active-save':''}"    onclick="detSetStatus('want')">+ want to go</button>
       <button class="det-btn ${v.status==='visited'?'active-visit':''}" onclick="detSetStatus('visited')">✓ visited</button>
@@ -2152,3 +2182,4 @@ document.addEventListener('DOMContentLoaded', async () => {
 </script>
 </body>
 </html>
+
