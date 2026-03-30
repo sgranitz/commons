@@ -694,7 +694,7 @@ header {
   </div>
   <div class="header-right">
     <div id="auth-out" style="display:flex;align-items:center;gap:6px">
-      <button class="auth-btn" onclick="openVaultModal()">connect vault</button>
+      <button class="auth-btn" id="connectVaultBtn">connect vault</button>
     </div>
     <div id="auth-in" style="display:none;align-items:center;gap:8px">
       <div class="identity-pill">
@@ -1239,10 +1239,18 @@ function showDisconnected() {
 
 // ── Vault modal ──
 function openVaultModal() {
-  document.getElementById('vaultSetupOptions').style.display = '';
-  document.getElementById('vaultReconnectRow').style.display = 'none';
-  document.getElementById('vaultPathRow').style.display      = 'none';
-  document.getElementById('vaultModal').classList.add('open');
+  const setup = document.getElementById('vaultSetupOptions');
+  const reconnect = document.getElementById('vaultReconnectRow');
+  const path = document.getElementById('vaultPathRow');
+  const modal = document.getElementById('vaultModal');
+  if (!setup || !reconnect || !path || !modal) {
+    showToast('vault setup is unavailable right now');
+    return;
+  }
+  setup.style.display = '';
+  reconnect.style.display = 'none';
+  path.style.display      = 'none';
+  modal.classList.add('open');
 }
 function closeVaultModal() { document.getElementById('vaultModal').classList.remove('open'); }
 function maybeCloseVaultModal(e) { if (e.target === document.getElementById('vaultModal')) closeVaultModal(); }
@@ -2173,6 +2181,7 @@ function switchTab(tab) {
 // ══════════════════════════════════════════════════════════════ INIT
 document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('city-label').textContent = CITY.label;
+  document.getElementById('connectVaultBtn')?.addEventListener('click', openVaultModal);
   venues = await initVenues();
   nextId = Math.max(...venues.map(v => v.id), 0) + 1;
   initMap();
